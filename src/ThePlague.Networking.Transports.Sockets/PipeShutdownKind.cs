@@ -1,4 +1,4 @@
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     /// <summary>
     /// When possible, determines how the pipe first reached a close state

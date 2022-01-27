@@ -8,9 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
-    public partial class SocketConnection
+    public partial class SocketConnectionContext
     {
         /// <summary>
         /// The total number of bytes sent to the socket

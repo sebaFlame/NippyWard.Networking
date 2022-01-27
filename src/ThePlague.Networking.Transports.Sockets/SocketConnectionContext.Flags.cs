@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     /// <summary>
     /// Flags that influence the behavior of SocketConnection
@@ -34,7 +34,7 @@ namespace ThePlague.Networking.Sockets
         InlineConnect = 1 << 3,
     }
 
-    public partial class SocketConnection
+    public partial class SocketConnectionContext
     {
         private SocketConnectionOptions SocketConnectionOptions { get; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

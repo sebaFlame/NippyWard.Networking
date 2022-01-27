@@ -5,9 +5,9 @@ using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
-    public partial class SocketConnection
+    public partial class SocketConnectionContext
     {
         /// <summary>
         /// Open a new or existing socket as a client
@@ -92,7 +92,7 @@ namespace ThePlague.Networking.Sockets
                 await args;
             }
 
-            SocketConnection connection = Create
+            SocketConnectionContext connection = Create
             (
                 socket,
                 sendPipeOptions,

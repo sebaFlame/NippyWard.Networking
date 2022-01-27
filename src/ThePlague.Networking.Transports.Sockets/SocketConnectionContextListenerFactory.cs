@@ -3,9 +3,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
-    public class SocketConnectionListenerFactory : IConnectionListenerFactory
+    public class SocketConnectionContextListenerFactory
+        : IConnectionListenerFactory
     {
         public ValueTask<IConnectionListener> BindAsync
         (

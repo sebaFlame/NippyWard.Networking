@@ -3,15 +3,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
-    public class SocketConnectionFactory : IConnectionFactory
+    public class SocketConnectionContextFactory : IConnectionFactory
     {
         public ValueTask<ConnectionContext> ConnectAsync
         (
             EndPoint endpoint,
             CancellationToken cancellationToken = default
         )
-            => SocketConnection.ConnectAsync(endpoint);
+            => SocketConnectionContext.ConnectAsync(endpoint);
     }
 }

@@ -10,10 +10,10 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     //TODO: bandwidth throttling (with feature)
-    public sealed partial class SocketConnection
+    public sealed partial class SocketConnectionContext
         : ConnectionContext,
             IMeasuredDuplexPipe,
             IConnectionIdFeature,
@@ -91,13 +91,13 @@ namespace ThePlague.Networking.Sockets
 
         private static readonly System.Timers.Timer _BandwidthTimer;
 
-        static SocketConnection()
+        static SocketConnectionContext()
         {
             _BandwidthTimer = new System.Timers.Timer(1000);
             _BandwidthTimer.Start();
         }
 
-        private SocketConnection
+        private SocketConnectionContext
         (
             Socket socket,
             PipeOptions sendPipeOptions,
@@ -334,14 +334,14 @@ namespace ThePlague.Networking.Sockets
         /// <summary>
         /// Create a SocketConnection instance over an existing socket
         /// </summary>
-        internal static SocketConnection Create
+        internal static SocketConnectionContext Create
         (
             Socket socket,
             PipeOptions pipeOptions = null,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
             string name = null
         )
-            => new SocketConnection
+            => new SocketConnectionContext
             (
                 socket,
                 pipeOptions,
@@ -353,7 +353,7 @@ namespace ThePlague.Networking.Sockets
         /// <summary>
         /// Create a SocketConnection instance over an existing socket
         /// </summary>
-        internal static SocketConnection Create
+        internal static SocketConnectionContext Create
         (
             Socket socket,
             PipeOptions sendPipeOptions,
@@ -361,7 +361,7 @@ namespace ThePlague.Networking.Sockets
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
             string name = null
         )
-            => new SocketConnection
+            => new SocketConnectionContext
             (
                 socket,
                 sendPipeOptions,
@@ -435,7 +435,7 @@ namespace ThePlague.Networking.Sockets
         private static bool TrySetShutdown
         (
             Exception ex,
-            SocketConnection connection,
+            SocketConnectionContext connection,
             PipeShutdownKind kind
         )
         {
@@ -473,10 +473,10 @@ namespace ThePlague.Networking.Sockets
         }
 
         private static void DoReceiveAsync(object s)
-            => FireAndForget(((SocketConnection)s).DoReceiveAsync());
+            => FireAndForget(((SocketConnectionContext)s).DoReceiveAsync());
 
         private static void DoSendAsync(object s)
-            => FireAndForget(((SocketConnection)s).DoSendAsync());
+            => FireAndForget(((SocketConnectionContext)s).DoSendAsync());
 
         private readonly PipeOptions _receiveOptions, _sendOptions;
     }

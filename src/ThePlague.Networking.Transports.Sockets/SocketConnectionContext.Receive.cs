@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
-    public partial class SocketConnection
+    public partial class SocketConnectionContext
     {
         private SocketAwaitableEventArgs _readerArgs;
 

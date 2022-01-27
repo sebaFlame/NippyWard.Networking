@@ -3,14 +3,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     internal sealed class WrappedReader : PipeReader
     {
         private readonly PipeReader _reader;
-        private readonly SocketConnection _connection;
+        private readonly SocketConnectionContext _connection;
 
-        public WrappedReader(PipeReader reader, SocketConnection connection)
+        public WrappedReader(PipeReader reader, SocketConnectionContext connection)
         {
             this._reader = reader;
             this._connection = connection;

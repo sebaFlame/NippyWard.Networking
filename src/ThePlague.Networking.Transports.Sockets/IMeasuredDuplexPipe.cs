@@ -1,6 +1,6 @@
 ﻿using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     /// <summary>
     /// A duplex pipe that measures the bytes sent/received

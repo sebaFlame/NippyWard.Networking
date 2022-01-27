@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     /// <summary>
     /// Represents a multi-client socket-server capable of dispatching pipeline clients
@@ -122,12 +122,12 @@ namespace ThePlague.Networking.Sockets
                     Socket clientSocket
                         = await this._listenerSocket.AcceptAsync();
 
-                    SocketConnection.SetRecommendedServerOptions
+                    SocketConnectionContext.SetRecommendedServerOptions
                     (
                         clientSocket
                     );
 
-                    SocketConnection socketConnection = SocketConnection.Create
+                    SocketConnectionContext socketConnection = SocketConnectionContext.Create
                     (
                         clientSocket,
                         sendPipeOptions: this._sendOptions,

@@ -3,14 +3,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Sockets
+namespace ThePlague.Networking.Transports.Sockets
 {
     internal sealed class WrappedWriter : PipeWriter
     {
         private readonly PipeWriter _writer;
-        private readonly SocketConnection _connection;
+        private readonly SocketConnectionContext _connection;
 
-        public WrappedWriter(PipeWriter writer, SocketConnection connection)
+        public WrappedWriter(PipeWriter writer, SocketConnectionContext connection)
         {
             this._writer = writer;
             this._connection = connection;
