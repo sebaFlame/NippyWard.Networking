@@ -1,5 +1,4 @@
-﻿using Pipelines.Sockets.Unofficial.Internal;
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net.Sockets;
@@ -7,7 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Pipelines.Sockets.Unofficial
+namespace ThePlague.Networking.Sockets
 {
     // This type is largely similar to the type of the same name in KestrelHttpServer, with some minor tweaks:
     // - when scheduing a callback against an already complete task (semi-synchronous case), prefer to use the io pipe scheduler for onward continuations, not the thread pool
@@ -24,20 +23,24 @@ namespace Pipelines.Sockets.Unofficial
         /// </summary>
         public void Abort(SocketError error = SocketError.OperationAborted)
         {
-            if (error == SocketError.Success) Throw.Argument(nameof(error));
-            _forcedError = error;
-            OnCompleted(this);
+            if(error == SocketError.Success)
+            {
+                throw new ArgumentException(nameof(error));
+            }
+
+            this._forcedError = error;
+            this.OnCompleted(this);
         }
 
         private volatile SocketError _forcedError; // Success = 0, no field init required
 
-        private static readonly Action _callbackCompleted = () => { };
+        private static readonly Action _CallbackCompleted = () => { };
 
         private readonly PipeScheduler _ioScheduler;
 
         private Action _callback;
 
-        internal static readonly Action<object> InvokeStateAsAction = state => ((Action)state)();
+        internal static readonly Action<object> _InvokeStateAsAction = state => ((Action)state)();
 
         /// <summary>
         /// Create a new SocketAwaitableEventArgs instance, optionally providing a scheduler for callbacks
@@ -46,8 +49,12 @@ namespace Pipelines.Sockets.Unofficial
         public SocketAwaitableEventArgs(PipeScheduler ioScheduler = null)
         {
             // treat null and Inline interchangeably
-            if ((object)ioScheduler == (object)PipeScheduler.Inline) ioScheduler = null;
-            _ioScheduler = ioScheduler;
+            if(ioScheduler == PipeScheduler.Inline)
+            {
+                ioScheduler = null;
+            }
+
+            this._ioScheduler = ioScheduler;
         }
 
         /// <summary>
@@ -58,33 +65,31 @@ namespace Pipelines.Sockets.Unofficial
         /// <summary>
         /// Indicates whether the current operation is complete; used as part of "await"
         /// </summary>
-        public bool IsCompleted => ReferenceEquals(_callback, _callbackCompleted);
+        public bool IsCompleted => ReferenceEquals(this._callback, _CallbackCompleted);
 
         /// <summary>
         /// Gets the result of the async operation is complete; used as part of "await"
         /// </summary>
         public int GetResult()
         {
-            Debug.Assert(ReferenceEquals(_callback, _callbackCompleted));
+            Debug.Assert(ReferenceEquals(this._callback, _CallbackCompleted));
 
-            _callback = null;
+            this._callback = null;
 
-            if (_forcedError != SocketError.Success)
+            if(this._forcedError != SocketError.Success)
             {
-                ThrowSocketException(_forcedError);
+                ThrowSocketException(this._forcedError);
             }
 
-            if (SocketError != SocketError.Success)
+            if(this.SocketError != SocketError.Success)
             {
-                ThrowSocketException(SocketError);
+                ThrowSocketException(this.SocketError);
             }
 
-            return BytesTransferred;
+            return this.BytesTransferred;
 
             static void ThrowSocketException(SocketError e)
-            {
-                Throw.Socket((int)e);
-            }
+                => throw new SocketException((int)e);
         }
 
         /// <summary>
@@ -92,18 +97,18 @@ namespace Pipelines.Sockets.Unofficial
         /// </summary>
         public void OnCompleted(Action continuation)
         {
-            if (ReferenceEquals(Volatile.Read(ref _callback), _callbackCompleted)
-                || ReferenceEquals(Interlocked.CompareExchange(ref _callback, continuation, null), _callbackCompleted))
+            if(ReferenceEquals(Volatile.Read(ref this._callback), _CallbackCompleted)
+                || ReferenceEquals(Interlocked.CompareExchange(ref this._callback, continuation, null), _CallbackCompleted))
             {
                 // this is the rare "kinda already complete" case; push to worker to prevent possible stack dive,
                 // but prefer the custom scheduler when possible
-                if (_ioScheduler == null)
+                if(this._ioScheduler == null)
                 {
                     Task.Run(continuation);
                 }
                 else
                 {
-                    _ioScheduler.Schedule(InvokeStateAsAction, continuation);
+                    this._ioScheduler.Schedule(_InvokeStateAsAction, continuation);
                 }
             }
         }
@@ -112,34 +117,30 @@ namespace Pipelines.Sockets.Unofficial
         /// Schedules a continuation for this operation; used as part of "await"
         /// </summary>
         public void UnsafeOnCompleted(Action continuation)
-        {
-            OnCompleted(continuation);
-        }
+            => this.OnCompleted(continuation);
 
         /// <summary>
         /// Marks the operation as complete - this should be invoked whenever a SocketAsyncEventArgs operation returns false
         /// </summary>
         public void Complete()
-        {
-            OnCompleted(this);
-        }
+            => this.OnCompleted(this);
 
         /// <summary>
         /// Invoked automatically when an operation completes asynchronously
         /// </summary>
         protected override void OnCompleted(SocketAsyncEventArgs e)
         {
-            var continuation = Interlocked.Exchange(ref _callback, _callbackCompleted);
+            Action continuation = Interlocked.Exchange(ref this._callback, _CallbackCompleted);
 
-            if (continuation != null)
+            if(continuation != null)
             {
-                if (_ioScheduler == null)
+                if(this._ioScheduler == null)
                 {
                     continuation.Invoke();
                 }
                 else
                 {
-                    _ioScheduler.Schedule(InvokeStateAsAction, continuation);
+                    this._ioScheduler.Schedule(_InvokeStateAsAction, continuation);
                 }
             }
         }

@@ -1,0 +1,14 @@
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.swp
+
+.vscode/
+.vs/
+.vimspector.json
+raw.log
+
+[Bb]in/
+[Oo]bj/
+BenchmarkDotNet.Artifacts/

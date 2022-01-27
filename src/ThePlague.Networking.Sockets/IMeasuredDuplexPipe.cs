@@ -1,6 +1,6 @@
 ﻿using System.IO.Pipelines;
 
-namespace Pipelines.Sockets.Unofficial
+namespace ThePlague.Networking.Sockets
 {
     /// <summary>
     /// A duplex pipe that measures the bytes sent/received
@@ -16,5 +16,8 @@ namespace Pipelines.Sockets.Unofficial
         /// The total number of bytes received by the pipe
         /// </summary>
         long TotalBytesReceived { get; }
+
+        long BytesReceivedPerSecond { get; }
+        long BytesSentPerSecond { get; }
     }
 }

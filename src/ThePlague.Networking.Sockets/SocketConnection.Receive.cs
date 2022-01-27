@@ -1,12 +1,13 @@
 ﻿using System;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Pipelines;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Pipelines.Sockets.Unofficial
+using Microsoft.AspNetCore.Connections;
+
+namespace ThePlague.Networking.Sockets
 {
     public partial class SocketConnection
     {
@@ -15,7 +16,7 @@ namespace Pipelines.Sockets.Unofficial
         /// <summary>
         /// The total number of bytes read from the socket
         /// </summary>
-        public long BytesRead => Interlocked.Read(ref _totalBytesReceived);
+        public long BytesRead => Interlocked.Read(ref this._totalBytesReceived);
 
         /// <summary>
         /// The number of bytes received in the last read
@@ -24,201 +25,209 @@ namespace Pipelines.Sockets.Unofficial
 
         private long _totalBytesReceived;
 
-        long IMeasuredDuplexPipe.TotalBytesReceived => BytesRead;
+        long IMeasuredDuplexPipe.TotalBytesReceived => this.BytesRead;
 
         private async Task DoReceiveAsync()
         {
             Exception error = null;
-            DebugLog("starting receive loop");
+            Socket socket = this.Socket;
+            PipeWriter writer = this._receiveFromSocket.Writer;
+            SocketAwaitableEventArgs readerArgs = null;
+            bool zeroLengthReads = this.ZeroLengthReads;
+            ValueTask<FlushResult> flushTask;
+            FlushResult result;
+            Memory<byte> buffer;
+
             try
             {
-                _readerArgs = new SocketAwaitableEventArgs(InlineReads ? null : _receiveOptions.WriterScheduler);
-                while (true)
-                {
-                    if (ZeroLengthReads && Socket.Available == 0)
-                    {
-                        DebugLog($"awaiting zero-length receive...");
+                this._readerArgs = readerArgs = new SocketAwaitableEventArgs
+                (
+                    this.InlineReads ? null : this._receiveOptions.WriterScheduler
+                );
 
-                        Helpers.Incr(Counter.OpenReceiveReadAsync);
-                        DoReceive(Socket, _readerArgs, default, Name);
-                        Helpers.Incr(_readerArgs.IsCompleted ? Counter.SocketZeroLengthReceiveSync : Counter.SocketZeroLengthReceiveAsync);
-                        await _readerArgs;
-                        Helpers.Decr(Counter.OpenReceiveReadAsync);
-                        DebugLog($"zero-length receive complete; now {Socket.Available} bytes available");
+                while(true)
+                {
+                    if(zeroLengthReads && socket.Available == 0)
+                    {
+                        DoReceive(socket, readerArgs, default);
+
+                        await readerArgs;
 
                         // this *could* be because data is now available, or it *could* be because of
                         // the EOF; we can't really trust Available, so now we need to do a non-empty
                         // read to find out which
                     }
 
-                    var buffer = _receiveFromSocket.Writer.GetMemory(1);
-                    DebugLog($"leased {buffer.Length} bytes from pipe");
+                    buffer = writer.GetMemory(1);
+
                     try
                     {
-                        DebugLog($"initiating socket receive...");
-                        Helpers.Incr(Counter.OpenReceiveReadAsync);
+                        DoReceive(socket, readerArgs, buffer);
 
-                        DoReceive(Socket, _readerArgs, buffer, Name);
-                        Helpers.Incr(_readerArgs.IsCompleted ? Counter.SocketReceiveSync : Counter.SocketReceiveAsync);
-                        DebugLog(_readerArgs.IsCompleted ? "receive is sync" : "receive is async");
-                        var bytesReceived = await _readerArgs;
-                        LastReceived = bytesReceived;
-                        Helpers.Decr(Counter.OpenReceiveReadAsync);
+                        int bytesReceived = await readerArgs;
 
-                        Debug.Assert(bytesReceived == _readerArgs.BytesTransferred);
-                        DebugLog($"received {bytesReceived} bytes ({_readerArgs.BytesTransferred}, {_readerArgs.SocketError})");
+                        this.LastReceived = bytesReceived;
 
-                        if (bytesReceived <= 0)
+                        if(bytesReceived <= 0)
                         {
-                            _receiveFromSocket.Writer.Advance(0);
-                            TrySetShutdown(PipeShutdownKind.ReadEndOfStream);
+                            writer.Advance(0);
+                            this.TrySetShutdown
+                            (
+                                PipeShutdownKind.ReadEndOfStream
+                            );
                             break;
                         }
 
-                        _receiveFromSocket.Writer.Advance(bytesReceived);
-                        Interlocked.Add(ref _totalBytesReceived, bytesReceived);
+                        writer.Advance(bytesReceived);
+                        Interlocked.Add
+                        (
+                            ref this._totalBytesReceived,
+                            bytesReceived
+                        );
                     }
                     finally
                     {
                         // commit?
                     }
 
-                    DebugLog("flushing pipe");
-                    Helpers.Incr(Counter.OpenReceiveFlushAsync);
-                    var flushTask = _receiveFromSocket.Writer.FlushAsync();
-                    Helpers.Incr(flushTask.IsCompleted ? Counter.SocketPipeFlushSync : Counter.SocketPipeFlushAsync);
+                    flushTask = writer.FlushAsync();
 
-                    FlushResult result;
-                    if (flushTask.IsCompletedSuccessfully)
+                    if(flushTask.IsCompletedSuccessfully)
                     {
                         result = flushTask.Result;
-                        DebugLog("pipe flushed (sync)");
                     }
                     else
                     {
                         result = await flushTask;
-                        DebugLog("pipe flushed (async)");
                     }
-                    Helpers.Decr(Counter.OpenReceiveFlushAsync);
 
-                    if (result.IsCompleted)
+                    if(result.IsCompleted)
                     {
-                        TrySetShutdown(PipeShutdownKind.ReadFlushCompleted);
+                        this.TrySetShutdown
+                        (
+                            PipeShutdownKind.ReadFlushCompleted
+                        );
                         break;
                     }
-                    if (result.IsCanceled)
+                    if(result.IsCanceled)
                     {
-                        TrySetShutdown(PipeShutdownKind.ReadFlushCanceled);
+                        this.TrySetShutdown
+                        (
+                            PipeShutdownKind.ReadFlushCanceled
+                        );
                         break;
                     }
                 }
             }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.ConnectionReset)
+            catch(SocketException ex)
+                when
+                (
+                    ex.SocketErrorCode == SocketError.ConnectionReset
+                )
             {
-                TrySetShutdown(PipeShutdownKind.ReadSocketError, ex.SocketErrorCode);
-                DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
+                );
+
                 error = new ConnectionResetException(ex.Message, ex);
             }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted
-                                             || ex.SocketErrorCode == SocketError.ConnectionAborted
-                                             || ex.SocketErrorCode == SocketError.Interrupted
-                                             || ex.SocketErrorCode == SocketError.InvalidArgument)
+            catch(SocketException ex)
+                when
+                (
+                    ex.SocketErrorCode is SocketError.OperationAborted
+                        or SocketError.ConnectionAborted
+                        or SocketError.Interrupted
+                        or SocketError.InvalidArgument
+                )
             {
-                TrySetShutdown(PipeShutdownKind.ReadSocketError, ex.SocketErrorCode);
-                DebugLog($"fail: {ex.SocketErrorCode}");
-                if (!_receiveAborted)
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
+                );
+
+                if(!this._receiveAborted)
                 {
                     // Calling Dispose after ReceiveAsync can cause an "InvalidArgument" error on *nix.
                     error = new ConnectionAbortedException();
                 }
             }
-            catch (SocketException ex)
+            catch(SocketException ex)
             {
-                TrySetShutdown(PipeShutdownKind.ReadSocketError, ex.SocketErrorCode);
-                DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
+                );
                 error = ex;
             }
-            catch (ObjectDisposedException)
+            catch(ObjectDisposedException)
             {
-                TrySetShutdown(PipeShutdownKind.ReadDisposed);
-                DebugLog($"fail: disposed");
-                if (!_receiveAborted)
+                this.TrySetShutdown(PipeShutdownKind.ReadDisposed);
+
+                if(!this._receiveAborted)
                 {
                     error = new ConnectionAbortedException();
                 }
             }
-            catch (IOException ex)
+            catch(IOException ex)
             {
-                TrySetShutdown(PipeShutdownKind.ReadIOException);
-                DebugLog($"fail - io: {ex.Message}");
+                this.TrySetShutdown(PipeShutdownKind.ReadIOException);
                 error = ex;
             }
-            catch (Exception ex)
+            catch(Exception ex)
             {
-                TrySetShutdown(PipeShutdownKind.ReadException);
-                DebugLog($"fail: {ex.Message}");
+                this.TrySetShutdown(PipeShutdownKind.ReadException);
                 error = new IOException(ex.Message, ex);
             }
             finally
             {
-                if (_receiveAborted)
+                if(this._receiveAborted)
                 {
                     error ??= new ConnectionAbortedException();
                 }
                 try
                 {
-                    DebugLog($"shutting down socket-receive");
-                    Socket.Shutdown(SocketShutdown.Receive);
+                    this.Socket.Shutdown(SocketShutdown.Receive);
                 }
                 catch { }
 
                 // close the *writer* half of the receive pipe; we won't
                 // be writing any more, but callers can still drain the
                 // pipe if they choose
-                DebugLog($"marking {nameof(Input)} as complete");
-                try { _receiveFromSocket.Writer.Complete(error); } catch { }
+                try
+                {
+                    writer.Complete(error);
+                }
+                catch
+                { }
 
                 TrySetShutdown(error, this, PipeShutdownKind.InputWriterCompleted);
 
-                var args = _readerArgs;
-                _readerArgs = null;
-                if (args != null) try { args.Dispose(); } catch { }
+                this._readerArgs = null;
+                if(readerArgs is not null)
+                {
+                    try
+                    {
+                        readerArgs.Dispose();
+                    }
+                    catch
+                    { }
+                }
             }
 
-            DebugLog(error == null ? "exiting with success" : $"exiting with failure: {error.Message}");
             //return error;
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
-        private static void DoReceive(Socket socket, SocketAwaitableEventArgs args, Memory<byte> buffer, string name)
+        private static void DoReceive(Socket socket, SocketAwaitableEventArgs args, Memory<byte> buffer)
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
-#if SOCKET_STREAM_BUFFERS
             args.SetBuffer(buffer);
-#else
 
-            if (buffer.IsEmpty)
+            if(!socket.ReceiveAsync(args))
             {
-                // zero-length; retain existing buffer if possible
-                if (args.Buffer == null)
-                {
-                    args.SetBuffer(Array.Empty<byte>(), 0, 0);
-                }
-                else
-                {   // it doesn't matter that the old buffer may still be in
-                    // use somewhere; we're reading zero bytes!
-                    args.SetBuffer(args.Offset, 0);
-                }
+                args.Complete();
             }
-            else
-            {
-                var segment = buffer.GetArray();
-                args.SetBuffer(segment.Array, segment.Offset, segment.Count);
-            }
-#endif
-            Helpers.DebugLog(name, $"## {nameof(socket.ReceiveAsync)} <={buffer.Length}");
-
-            if (!socket.ReceiveAsync(args)) args.Complete();
         }
     }
 }

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.CompilerServices;
 
-namespace Pipelines.Sockets.Unofficial
+namespace ThePlague.Networking.Sockets
 {
     /// <summary>
     /// Flags that influence the behavior of SocketConnection
@@ -33,28 +33,30 @@ namespace Pipelines.Sockets.Unofficial
         /// </summary>
         InlineConnect = 1 << 3,
     }
+
     public partial class SocketConnection
     {
         private SocketConnectionOptions SocketConnectionOptions { get; }
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool HasFlag(SocketConnectionOptions option) => (option & SocketConnectionOptions) != 0;
+        private bool HasFlag(SocketConnectionOptions option)
+            => (option & this.SocketConnectionOptions) != 0;
 
         private bool ZeroLengthReads
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => HasFlag(SocketConnectionOptions.ZeroLengthReads);
+            get => this.HasFlag(SocketConnectionOptions.ZeroLengthReads);
         }
 
         private bool InlineReads
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => HasFlag(SocketConnectionOptions.InlineReads);
+            get => this.HasFlag(SocketConnectionOptions.InlineReads);
         }
 
         private bool InlineWrites
         {
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            get => HasFlag(SocketConnectionOptions.InlineWrites);
+            get => this.HasFlag(SocketConnectionOptions.InlineWrites);
         }
     }
 }

@@ -1,0 +1,56 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using System.IO.Pipelines;
+
+namespace ThePlague.Networking.Sockets
+{
+    internal sealed class WrappedReader : PipeReader
+    {
+        private readonly PipeReader _reader;
+        private readonly SocketConnection _connection;
+
+        public WrappedReader(PipeReader reader, SocketConnection connection)
+        {
+            this._reader = reader;
+            this._connection = connection;
+        }
+
+        public override void Complete(Exception exception = null)
+        {
+            this._connection.InputReaderCompleted(exception);
+            this._reader.Complete(exception);
+        }
+
+        public override void AdvanceTo(SequencePosition consumed)
+            => this._reader.AdvanceTo(consumed);
+
+        public override void AdvanceTo
+        (
+            SequencePosition consumed,
+            SequencePosition examined
+        )
+            => this._reader.AdvanceTo(consumed, examined);
+
+        public override void CancelPendingRead()
+            => this._reader.CancelPendingRead();
+
+        public override ValueTask<ReadResult> ReadAsync
+        (
+            CancellationToken cancellationToken = default
+        )
+            => this._reader.ReadAsync(cancellationToken);
+
+        public override bool TryRead(out ReadResult result)
+            => this._reader.TryRead(out result);
+
+        // note - consider deprecated: https://github.com/dotnet/corefx/issues/38362
+        [Obsolete]
+        public override void OnWriterCompleted
+        (
+            Action<Exception, object> callback,
+            object state
+        )
+            => this._reader.OnWriterCompleted(callback, state);
+    }
+}
