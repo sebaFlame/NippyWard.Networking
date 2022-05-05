@@ -32,7 +32,8 @@ namespace ThePlague.Networking.Transports.Pipes
             PipeStream stream,
             NamedPipeEndPoint endPoint,
             StreamPipeWriterOptions sendOptions = null,
-            StreamPipeReaderOptions receiveOptions = null
+            StreamPipeReaderOptions receiveOptions = null,
+            IFeatureCollection serverFeatureCollection = null
         )
         {
             this._stream = stream;
@@ -47,7 +48,7 @@ namespace ThePlague.Networking.Transports.Pipes
 
             this.Transport = this._pipe;
 
-            this.Features = new FeatureCollection();
+            this.Features = new FeatureCollection(serverFeatureCollection);
             this.Items = new ConnectionItems();
         }
 
@@ -58,7 +59,8 @@ namespace ThePlague.Networking.Transports.Pipes
             System.IO.Pipes.PipeOptions pipeOptions
                 = System.IO.Pipes.PipeOptions.Asynchronous,
             StreamPipeWriterOptions sendOptions = null,
-            StreamPipeReaderOptions receiveOptions = null
+            StreamPipeReaderOptions receiveOptions = null,
+            IFeatureCollection featureCollection = null
         )
         {
             NamedPipeClientStream stream = new NamedPipeClientStream
@@ -76,7 +78,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 stream,
                 endPoint,
                 sendOptions,
-                receiveOptions
+                receiveOptions,
+                featureCollection
             );
         }
 

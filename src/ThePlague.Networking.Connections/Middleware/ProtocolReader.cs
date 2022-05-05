@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Buffers;
-using System.IO.Pipelines;
+using System.Threading;
 using System.Threading.Tasks;
 
-namespace ThePlague.Networking.Connections
+using System.IO.Pipelines;
+
+namespace ThePlague.Networking.Connections.Middleware
 {
-    public class ProtocolReader<TMessage> : IDisposable, IAsyncDisposable
+    public class ProtocolReader<TMessage> : IProtocolReader<TMessage>, IDisposable
     {
         private readonly IDuplexPipe _pipe;
         private readonly IMessageReader<TMessage> _reader;
@@ -22,10 +24,10 @@ namespace ThePlague.Networking.Connections
             this._reader = reader;
         }
 
-        public void Complete(Exception ex)
+        public void Complete(Exception ex = null)
             => this._pipe.Input.Complete(ex);
 
-        internal ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync()
+        public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default)
         {
             if(this._disposed)
             {
@@ -37,6 +39,8 @@ namespace ThePlague.Networking.Connections
 
             while(pipeReader.TryRead(out ReadResult result))
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if(TrySetMessage
                 (
                     pipeReader,
@@ -49,17 +53,18 @@ namespace ThePlague.Networking.Connections
                 }
             }
 
-            return this.DoAsyncRead(pipeReader);
+            return this.DoAsyncRead(pipeReader, cancellationToken);
         }
 
         private ValueTask<ProtocolReadResult<TMessage>> DoAsyncRead
         (
-            PipeReader pipeReader
+            PipeReader pipeReader,
+            CancellationToken cancellationToken = default
         )
         {
             while(true)
             {
-                ValueTask<ReadResult> readTask = pipeReader.ReadAsync();
+                ValueTask<ReadResult> readTask = pipeReader.ReadAsync(cancellationToken);
                 ReadResult result;
 
                 if(readTask.IsCompletedSuccessfully)
@@ -72,7 +77,8 @@ namespace ThePlague.Networking.Connections
                     (
                         pipeReader,
                         readTask,
-                        this._reader
+                        this._reader,
+                        cancellationToken
                     );
                 }
 
@@ -94,7 +100,8 @@ namespace ThePlague.Networking.Connections
         (
             PipeReader pipeReader,
             ValueTask<ReadResult> readTask,
-            IMessageReader<TMessage> reader
+            IMessageReader<TMessage> reader,
+            CancellationToken cancellationToken = default
         )
         {
             while(true)
@@ -112,7 +119,7 @@ namespace ThePlague.Networking.Connections
                     return protocolReadResult;
                 }
 
-                readTask = pipeReader.ReadAsync();
+                readTask = pipeReader.ReadAsync(cancellationToken);
             }
         }
 
@@ -196,12 +203,6 @@ namespace ThePlague.Networking.Connections
             this.Complete(null);
             this._disposed = true;
             GC.SuppressFinalize(this);
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            this.Dispose();
-            return default;
         }
     }
 }

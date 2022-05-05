@@ -3,21 +3,21 @@ using System.IO.Pipelines;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Connections.Middleware
 {
     internal class TerminalPipeReader : PipeReader
     {
         private readonly IDuplexPipe _pipe;
-        private readonly ConnectionTerminal _terminal;
+        private readonly TaskCompletionSource _terminalCompleted;
 
         public TerminalPipeReader
         (
             IDuplexPipe pipe,
-            ConnectionTerminal terminal
+            TaskCompletionSource terminalCompleted
         )
         {
             this._pipe = pipe;
-            this._terminal = terminal;
+            this._terminalCompleted = terminalCompleted;
         }
 
         public override void AdvanceTo(SequencePosition consumed)
@@ -39,11 +39,11 @@ namespace ThePlague.Networking.Connections
 
             if(exception is not null)
             {
-                this._terminal.ConnectionCompleted.TrySetException(exception);
+                this._terminalCompleted.TrySetException(exception);
             }
             else
             {
-                this._terminal.ConnectionCompleted.TrySetResult(null);
+                this._terminalCompleted.TrySetResult();
             }
         }
 

@@ -1,18 +1,20 @@
 using System;
-using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
     /// <summary>
     /// Represents a multi-client socket-server capable of dispatching pipeline clients
     /// </summary>
-    internal class SocketServer
+    public class SocketServer
         : IConnectionListener,
             IDisposable
     {
@@ -21,32 +23,57 @@ namespace ThePlague.Networking.Transports.Sockets
         private Socket _listenerSocket;
         private PipeOptions _sendOptions;
         private PipeOptions _receiveOptions;
+        private readonly IFeatureCollection _serverFeatureCollection;
+        private readonly ILogger _logger;
 
         /// <summary>
         /// Create a new instance of a socket server
         /// </summary>
         public SocketServer
         (
-            EndPoint endPoint
+            EndPoint endPoint,
+            ILogger logger = null
         )
         {
             this.EndPoint = endPoint;
+            this._logger = logger;
+        }
+
+        /// <summary>
+        /// Create a new instance of a socket server
+        /// </summary>
+        public SocketServer
+        (
+            EndPoint endPoint,
+            IFeatureCollection serverFeatureCollection,
+            ILogger logger = null
+        )
+            : this(endPoint, logger)
+        {
+            this._serverFeatureCollection = serverFeatureCollection;
         }
 
         /// <summary>
         /// Start listening as a server
         /// </summary>
-        internal void Bind
+        public void Bind
         (
-            AddressFamily addressFamily = AddressFamily.InterNetwork,
-            SocketType socketType = SocketType.Stream,
-            ProtocolType protocolType = ProtocolType.Tcp,
             int listenBacklog = 20,
             PipeOptions sendOptions = null,
             PipeOptions receiveOptions = null
         )
         {
-            if(this._listenerSocket is not null)
+            AddressFamily addressFamily =
+                this.EndPoint.AddressFamily == AddressFamily.Unspecified
+                    ? AddressFamily.InterNetwork
+                    : this.EndPoint.AddressFamily;
+
+            ProtocolType protocolType =
+                addressFamily == AddressFamily.Unix
+                    ? ProtocolType.Unspecified
+                    : ProtocolType.Tcp;
+
+            if (this._listenerSocket is not null)
             {
                 throw new InvalidOperationException
                 (
@@ -57,14 +84,14 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket listener = new Socket
             (
                 addressFamily,
-                socketType,
+                SocketType.Stream,
                 protocolType
             );
 
-            this.EndPoint = listener.LocalEndPoint;
-
             listener.Bind(this.EndPoint);
             listener.Listen(listenBacklog);
+
+            //this.EndPoint = listener.LocalEndPoint;
 
             this._listenerSocket = listener;
             this._sendOptions = sendOptions;
@@ -76,17 +103,11 @@ namespace ThePlague.Networking.Transports.Sockets
         /// </summary>
         internal void Bind
         (
-            AddressFamily addressFamily,
-            SocketType socketType,
-            ProtocolType protocolType,
             PipeOptions sendOptions,
             PipeOptions receiveOptions
         )
             => this.Bind
             (
-                addressFamily,
-                socketType,
-                protocolType,
                 20,
                 sendOptions,
                 receiveOptions
@@ -115,34 +136,48 @@ namespace ThePlague.Networking.Transports.Sockets
             CancellationToken cancellationToken = default(CancellationToken)
         )
         {
-            while(true)
+            CancellationTokenRegistration reg = cancellationToken.Register((s) => ((SocketServer)s).Stop(), this, false);
+
+            try
             {
-                try
-                {
-                    Socket clientSocket
-                        = await this._listenerSocket.AcceptAsync();
+                Socket clientSocket = await this._listenerSocket.AcceptAsync();
 
-                    SocketConnectionContext.SetRecommendedServerOptions
-                    (
-                        clientSocket
-                    );
+                SocketConnectionContext.SetRecommendedServerOptions
+                (
+                    clientSocket
+                );
 
-                    SocketConnectionContext socketConnection = SocketConnectionContext.Create
-                    (
-                        clientSocket,
-                        sendPipeOptions: this._sendOptions,
-                        receivePipeOptions: this._receiveOptions
-                    );
-                }
-                catch(ObjectDisposedException)
-                {
-                    return null;
-                }
-                catch(SocketException e)
-                    when(e.SocketErrorCode == SocketError.OperationAborted)
-                {
-                    return null;
-                }
+                return SocketConnectionContext.Create
+                (
+                    clientSocket,
+                    sendPipeOptions: this._sendOptions,
+                    receivePipeOptions: this._receiveOptions,
+                    serverFeatureCollection: this._serverFeatureCollection,
+                    logger: this._logger
+                );
+            }
+            catch (ObjectDisposedException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return null;
+            }
+            catch (SocketException e)
+                when (e.SocketErrorCode == SocketError.OperationAborted)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return null;
+            }
+            catch (Exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                throw;
+            }
+            finally
+            {
+                reg.Dispose();
             }
         }
 

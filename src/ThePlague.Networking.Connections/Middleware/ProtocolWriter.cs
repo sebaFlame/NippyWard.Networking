@@ -3,9 +3,9 @@ using System.IO.Pipelines;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Connections.Middleware
 {
-    public class ProtocolWriter<TMessage> : IDisposable, IAsyncDisposable
+    public class ProtocolWriter<TMessage> : IProtocolWriter<TMessage>, IDisposable
     {
         private readonly IDuplexPipe _pipe;
         private readonly IMessageWriter<TMessage> _writer;
@@ -23,9 +23,18 @@ namespace ThePlague.Networking.Connections
             this._semaphore = new SemaphoreSlim(1);
         }
 
-        public void Complete(Exception ex)
+        public void Complete(Exception ex = null)
             => this._pipe.Output.Complete(ex);
 
+        /// <summary>
+        /// Writes a message to the transport using an <see cref="IMessageWriter{TMessage}"/>.
+        /// This method uses a (async) semaphore to allow only 1 write at a time.
+        /// </summary>
+        /// <param name="message">The message to transmit</param>
+        /// <param name="cancellationToken">Cancellation token to cancel the write</param>
+        /// <returns>An awaitable valuetask</returns>
+        /// <exception cref="ObjectDisposedException"></exception>
+        /// <exception cref="OperationCanceledException"></exception>
         public async ValueTask WriteAsync
         (
             TMessage message,
@@ -54,8 +63,7 @@ namespace ThePlague.Networking.Connections
                 writer.WriteMessage(message, pipeWriter);
 
                 FlushResult result;
-                ValueTask<FlushResult> resultTask
-                    = pipeWriter.FlushAsync(cancellationToken);
+                ValueTask<FlushResult> resultTask = pipeWriter.FlushAsync(cancellationToken);
 
                 if(resultTask.IsCompletedSuccessfully)
                 {
@@ -92,12 +100,6 @@ namespace ThePlague.Networking.Connections
             }
             catch
             { }
-        }
-
-        public ValueTask DisposeAsync()
-        {
-            this.Dispose();
-            return default;
         }
     }
 }

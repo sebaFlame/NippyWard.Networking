@@ -3,21 +3,21 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Connections.Middleware
 {
     internal sealed class TerminalPipeWriter : PipeWriter
     {
         private readonly IDuplexPipe _pipe;
-        private readonly ConnectionTerminal _terminal;
+        private readonly TaskCompletionSource _terminalCompleted;
 
         public TerminalPipeWriter
         (
             IDuplexPipe pipe,
-            ConnectionTerminal terminal
+            TaskCompletionSource terminalCompleted
         )
         {
             this._pipe = pipe;
-            this._terminal = terminal;
+            this._terminalCompleted = terminalCompleted;
         }
 
         public override void Complete(Exception exception = null)
@@ -26,11 +26,11 @@ namespace ThePlague.Networking.Connections
 
             if(exception is not null)
             {
-                this._terminal.ConnectionCompleted.TrySetException(exception);
+                this._terminalCompleted.TrySetException(exception);
             }
             else
             {
-                this._terminal.ConnectionCompleted.TrySetResult(null);
+                this._terminalCompleted.TrySetResult();
             }
         }
 

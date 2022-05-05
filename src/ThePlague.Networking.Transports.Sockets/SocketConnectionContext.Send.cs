@@ -23,6 +23,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private SocketAwaitableEventArgs _writerArgs;
 
+        private List<ArraySegment<byte>> _spareBuffer;
+
         private async Task DoSendAsync()
         {
             Exception error = null;
@@ -34,6 +36,7 @@ namespace ThePlague.Networking.Transports.Sockets
             ValueTask<ReadResult> read;
             ReadOnlySequence<byte> buffer;
 
+            this.DebugLog("starting send loop");
             try
             {
                 this._writerArgs = writerArgs = new SocketAwaitableEventArgs
@@ -43,7 +46,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
                 while(true)
                 {
-                    if(!reader.TryRead(out result))
+                    this.DebugLog("awaiting data from pipe...");
+                    if (!reader.TryRead(out result))
                     {
                         read = reader.ReadAsync();
 
@@ -62,6 +66,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     if(result.IsCanceled
                         || (result.IsCompleted && buffer.IsEmpty))
                     {
+                        this.DebugLog(result.IsCanceled ? "cancelled" : "complete");
                         break;
                     }
 
@@ -69,20 +74,24 @@ namespace ThePlague.Networking.Transports.Sockets
                     {
                         if(!buffer.IsEmpty)
                         {
-                            DoSend(socket, writerArgs, buffer);
+                            this.DebugLog($"sending {buffer.Length} bytes over socket...");
+                            DoSend(socket, writerArgs, buffer, ref this._spareBuffer);
                             Interlocked.Add
                             (
                                 ref this._totalBytesSent,
                                 await writerArgs
                             );
                         }
-                        else if(result.IsCompleted)
+
+                        if(result.IsCompleted)
                         {
+                            this.DebugLog("completed");
                             break;
                         }
                     }
                     finally
                     {
+                        this.DebugLog("advancing");
                         reader.AdvanceTo(buffer.End);
                     }
                 }
@@ -99,6 +108,9 @@ namespace ThePlague.Networking.Transports.Sockets
                 (
                     PipeShutdownKind.WriteSocketError, ex.SocketErrorCode
                 );
+
+                this.DebugLog($"fail: {ex.SocketErrorCode}");
+
                 error = null;
             }
             catch(SocketException ex)
@@ -107,21 +119,33 @@ namespace ThePlague.Networking.Transports.Sockets
                 (
                     PipeShutdownKind.WriteSocketError, ex.SocketErrorCode
                 );
+
+                this.DebugLog($"fail: {ex.SocketErrorCode}");
+
                 error = ex;
             }
             catch(ObjectDisposedException)
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteDisposed);
+
+                this.DebugLog("fail: disposed");
+
                 error = null;
             }
             catch(IOException ex)
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteIOException);
+
+                this.DebugLog($"fail - io: {ex.Message}");
+
                 error = ex;
             }
             catch(Exception ex)
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteException);
+
+                this.DebugLog($"fail: {ex.Message}");
+
                 error = new IOException(ex.Message, ex);
             }
             finally
@@ -132,12 +156,14 @@ namespace ThePlague.Networking.Transports.Sockets
                 this._sendAborted = true;
                 try
                 {
+                    this.DebugLog($"shutting down socket-send");
                     socket.Shutdown(SocketShutdown.Send);
                 }
                 catch { }
 
                 // close *both halves* of the send pipe; we're not
                 // listening *and* we don't want anyone trying to write
+                this.DebugLog($"marking {nameof(this.Output)} as complete");
                 try
                 {
                     writer.Complete(error);
@@ -171,25 +197,26 @@ namespace ThePlague.Networking.Transports.Sockets
                 }
             }
 
+            this.DebugLog(error == null ? "exiting with success" : $"exiting with failure: {error.Message}");
             //return error;
         }
 
-        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, in ReadOnlySequence<byte> buffer)
+        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)
         {
-            if(buffer.IsSingleSegment)
+            if (buffer.IsSingleSegment)
             {
-                DoSend(socket, args, buffer.First);
+                DoSend(socket, args, buffer.First, ref spareBuffer);
                 return;
             }
 
             //ensure buffer is null
-            if(!args.MemoryBuffer.IsEmpty)
+            if (!args.MemoryBuffer.IsEmpty)
             {
                 args.SetBuffer(null, 0, 0);
             }
 
             //initialize buffer list
-            IList<ArraySegment<byte>> bufferList = GetBufferList(args, buffer);
+            IList<ArraySegment<byte>> bufferList = GetBufferList(args, buffer, ref spareBuffer);
             args.BufferList = bufferList;
 
             if(!socket.SendAsync(args))
@@ -199,9 +226,11 @@ namespace ThePlague.Networking.Transports.Sockets
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
-        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, ReadOnlyMemory<byte> memory)
+        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, ReadOnlyMemory<byte> memory, ref List<ArraySegment<byte>> spareBuffer)
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
+            RecycleSpareBuffer(args, ref spareBuffer);
+
             args.SetBuffer(MemoryMarshal.AsMemory(memory));
 
             if(!socket.SendAsync(args))
@@ -210,11 +239,11 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer)
+        private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)
         {
-            IList<ArraySegment<byte>> list = args?.BufferList;
+            IList<ArraySegment<byte>> list = (args?.BufferList as List<ArraySegment<byte>>) ?? GetSpareBuffer(ref spareBuffer);
 
-            if(list is null)
+            if (list is null)
             {
                 list = new List<ArraySegment<byte>>();
             }
@@ -238,6 +267,23 @@ namespace ThePlague.Networking.Transports.Sockets
             }
 
             return list;
+        }
+
+        private static List<ArraySegment<byte>> GetSpareBuffer(ref List<ArraySegment<byte>> spareBuffer)
+        {
+            var existing = Interlocked.Exchange(ref spareBuffer, null);
+            existing?.Clear();
+            return existing;
+        }
+
+        private static void RecycleSpareBuffer(SocketAwaitableEventArgs args, ref List<ArraySegment<byte>> spareBuffer)
+        {
+            // note: the BufferList getter is much less expensive then the setter.
+            if (args?.BufferList is List<ArraySegment<byte>> list)
+            {
+                args.BufferList = null; // see #26 - don't want it being reused by the next piece of IO
+                Interlocked.Exchange(ref spareBuffer, list);
+            }
         }
     }
 }

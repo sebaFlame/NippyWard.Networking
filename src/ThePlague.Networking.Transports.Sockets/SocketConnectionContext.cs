@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
-using System.IO.Pipelines;
 using System.Timers;
+using System.Runtime.CompilerServices;
 
+using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -85,6 +87,8 @@ namespace ThePlague.Networking.Transports.Sockets
         private long _receiveSpeedInBytes;
         private long _sendSpeedInBytes;
 
+        private Task _receiveTask, _sendTask;
+
         //receive and send "thread"
         private static readonly Action<object> _DoReceiveAsync = DoReceiveAsync;
         private static readonly Action<object> _DoSendAsync = DoSendAsync;
@@ -103,7 +107,9 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeOptions sendPipeOptions,
             PipeOptions receivePipeOptions,
             SocketConnectionOptions socketConnectionOptions,
-            string name = null
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
         {
             if(string.IsNullOrWhiteSpace(name))
@@ -146,8 +152,9 @@ namespace ThePlague.Networking.Transports.Sockets
                 this
             );
 
-            this.Features = new FeatureCollection();
+            this.Features = new FeatureCollection(featureCollection);
             this.Items = new ConnectionItems();
+            this._logger = logger;
 
             //set features
             this.Features.Set<IMeasuredDuplexPipe>(this);
@@ -172,6 +179,11 @@ namespace ThePlague.Networking.Transports.Sockets
             receivePipeOptions.ReaderScheduler.Schedule(_DoReceiveAsync, this);
         }
 
+        ~SocketConnectionContext()
+        {
+            this.Dispose(false);
+        }
+
         private bool TrySetShutdown(PipeShutdownKind kind)
         {
             if(kind != PipeShutdownKind.None
@@ -182,7 +194,6 @@ namespace ThePlague.Networking.Transports.Sockets
                     0
                 ) == 0)
             {
-                this._connectionClosedTokenSource.Cancel();
                 return true;
             }
 
@@ -235,10 +246,14 @@ namespace ThePlague.Networking.Transports.Sockets
             => TrySetShutdown(ex, this, PipeShutdownKind.OutputWriterCompleted);
 
         public override void Abort(ConnectionAbortedException abortReason)
-            => this.TrySetShutdown
+        {
+            this.TrySetShutdown
             (
                 PipeShutdownKind.ConnectionAborted
             );
+
+            this._connectionClosedTokenSource.Cancel();
+        }
 
         private void OnBandwidthEvent(object source, ElapsedEventArgs e)
         {
@@ -262,15 +277,39 @@ namespace ThePlague.Networking.Transports.Sockets
             this._previousTotalBytesReceived = totalBytesSent;
         }
 
+        public override async ValueTask DisposeAsync()
+        {
+            //ensure connection closed
+            this._connectionClosedTokenSource.Cancel();
+
+            this.Dispose();
+
+            //ensure receive/send thread ended
+            //this should always happen as socket gets disposed
+            //and Pipes get completed
+            //discard any errors
+            try
+            {
+                await Task.WhenAll(this._receiveTask, this._sendTask);
+            }
+            catch
+            { }
+
+            await base.DisposeAsync();
+        }
+
         /// <summary>
         /// Release any resources held by this instance
         /// </summary>
         public void Dispose()
         {
+            this.Dispose(true);
+        }
+
+        private void Dispose(bool isDisposing)
+        {
             this.TrySetShutdown(PipeShutdownKind.PipeDisposed);
-#if DEBUG
-            GC.SuppressFinalize(this);
-#endif
+
             try
             {
                 this.Socket.Shutdown(SocketShutdown.Receive);
@@ -314,16 +353,45 @@ namespace ThePlague.Networking.Transports.Sockets
             catch
             { }
 
-            //clean up cancellationtoken
-            this._connectionClosedTokenSource.Dispose();
+            //complete if not completed yet, so write thread can end
+            //this does not override existing completion
+            try
+            {
+                this._output.Complete(new ObjectDisposedException(nameof(SocketConnectionContext)));
+            }
+            catch
+            { }
 
-            _BandwidthTimer.Elapsed -= this.OnBandwidthEvent;
-        }
+            //complete if not completed yet, so read thread can end
+            //this does not override existing completion
+            try
+            {
+                this._input.Complete(new ObjectDisposedException(nameof(SocketConnectionContext)));
+            }
+            catch
+            { }
 
-        public override ValueTask DisposeAsync()
-        {
-            this.Dispose();
-            return base.DisposeAsync();
+            try
+            {
+                //clean up cancellationtoken
+                this._connectionClosedTokenSource.Dispose();
+            }
+            catch
+            { }
+
+            try
+            {
+                _BandwidthTimer.Elapsed -= this.OnBandwidthEvent;
+            }
+            catch
+            { }
+
+            if(!isDisposing)
+            {
+                return;
+            }
+
+            GC.SuppressFinalize(this);
         }
 
         /// <summary>
@@ -339,7 +407,9 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket,
             PipeOptions pipeOptions = null,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
-            string name = null
+            IFeatureCollection serverFeatureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
             => new SocketConnectionContext
             (
@@ -347,7 +417,9 @@ namespace ThePlague.Networking.Transports.Sockets
                 pipeOptions,
                 pipeOptions,
                 socketConnectionOptions,
-                name
+                serverFeatureCollection,
+                name,
+                logger
             );
 
         /// <summary>
@@ -359,7 +431,9 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeOptions sendPipeOptions,
             PipeOptions receivePipeOptions,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
-            string name = null
+            IFeatureCollection serverFeatureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
             => new SocketConnectionContext
             (
@@ -367,12 +441,16 @@ namespace ThePlague.Networking.Transports.Sockets
                 sendPipeOptions,
                 receivePipeOptions,
                 socketConnectionOptions,
-                name
+                serverFeatureCollection,
+                name,
+                logger
             );
 
         private static void SetDefaultSocketOptions(Socket socket)
         {
-            if(socket.AddressFamily == AddressFamily.Unix)
+            //socket.LingerState = new LingerOption(true, 10);
+
+            if (socket.AddressFamily == AddressFamily.Unix)
             {
                 return;
             }
@@ -397,21 +475,21 @@ namespace ThePlague.Networking.Transports.Sockets
 
                 socket.SetSocketOption
                 (
-                    SocketOptionLevel.Socket,
+                    SocketOptionLevel.Tcp,
                     SocketOptionName.TcpKeepAliveTime,
                     10
                 );
 
                 socket.SetSocketOption
                 (
-                    SocketOptionLevel.Socket,
+                    SocketOptionLevel.Tcp,
                     SocketOptionName.TcpKeepAliveInterval,
                     5
                 );
 
                 socket.SetSocketOption
                 (
-                    SocketOptionLevel.Socket,
+                    SocketOptionLevel.Tcp,
                     SocketOptionName.TcpKeepAliveRetryCount,
                     3
                 );
@@ -451,33 +529,32 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        private static void FireAndForget(Task task)
+        private static void DoReceiveAsync(object s)
         {
-            // make sure that any exception is observed
-            if(task is null)
-            {
-                return;
-            }
-
-            if(task.IsCompleted)
-            {
-                GC.KeepAlive(task.Exception);
-                return;
-            }
-
-            task.ContinueWith
-            (
-                t => GC.KeepAlive(t.Exception),
-                TaskContinuationOptions.OnlyOnFaulted
-            );
+            SocketConnectionContext ctx = (SocketConnectionContext)s;
+            ctx._receiveTask = ctx.DoReceiveAsync();
         }
 
-        private static void DoReceiveAsync(object s)
-            => FireAndForget(((SocketConnectionContext)s).DoReceiveAsync());
-
         private static void DoSendAsync(object s)
-            => FireAndForget(((SocketConnectionContext)s).DoSendAsync());
+        {
+            SocketConnectionContext ctx = (SocketConnectionContext)s;
+            ctx._sendTask = ctx.DoSendAsync();
+        }
 
         private readonly PipeOptions _receiveOptions, _sendOptions;
+        private readonly ILogger _logger;
+
+        private void DebugLog(string message, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
+            => DebugLog(this._logger, this.ConnectionId, message, $"{caller}#{lineNumber}");
+
+        private static void DebugLog(ILogger logger, string connectionId, string message, string caller = null)
+        {
+            if (logger is null)
+            {
+                return;
+            }
+
+            logger.LogDebug($"[{connectionId}, {caller}] {message}");
+        }
     }
 }

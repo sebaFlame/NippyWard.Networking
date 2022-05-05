@@ -1,9 +1,11 @@
-﻿using System.IO.Pipelines;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 
+using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -18,7 +20,9 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeOptions pipeOptions = null,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
             Socket socket = null,
-            string name = null
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
             => ConnectAsync
             (
@@ -27,7 +31,9 @@ namespace ThePlague.Networking.Transports.Sockets
                 pipeOptions,
                 connectionOptions,
                 socket,
-                name
+                featureCollection,
+                name,
+                logger
             );
 
         /// <summary>
@@ -40,7 +46,9 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeOptions receivePipeOptions,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
             Socket socket = null,
-            string name = null
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
         {
             AddressFamily addressFamily =
@@ -98,7 +106,9 @@ namespace ThePlague.Networking.Transports.Sockets
                 sendPipeOptions,
                 receivePipeOptions,
                 connectionOptions,
-                name
+                featureCollection,
+                name,
+                logger
             );
 
             connection.LocalEndPoint = socket.LocalEndPoint;

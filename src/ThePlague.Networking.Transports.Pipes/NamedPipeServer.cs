@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.IO.Pipes;
 
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace ThePlague.Networking.Transports.Pipes
 {
@@ -22,6 +23,7 @@ namespace ThePlague.Networking.Transports.Pipes
         private StreamPipeReaderOptions _receiveOptions;
         private NamedPipeServerStream _stream;
         private readonly NamedPipeEndPoint _endPoint;
+        private readonly IFeatureCollection _serverFeatureCollection;
 
         public NamedPipeServer
         (
@@ -29,6 +31,16 @@ namespace ThePlague.Networking.Transports.Pipes
         )
         {
             this._endPoint = endPoint;
+        }
+
+        public NamedPipeServer
+        (
+            NamedPipeEndPoint endPoint,
+            IFeatureCollection serverFeatureCollection
+        )
+            : this(endPoint)
+        {
+            this._serverFeatureCollection = serverFeatureCollection;
         }
 
         /// <summary>
@@ -91,9 +103,7 @@ namespace ThePlague.Networking.Transports.Pipes
             {
                 try
                 {
-                    await this._stream
-                        .WaitForConnectionAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                    await this._stream.WaitForConnectionAsync(cancellationToken);
 
                     return new NamedPipeConnectionContext
                     (
@@ -105,6 +115,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 }
                 catch(ObjectDisposedException)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     return null;
                 }
             }

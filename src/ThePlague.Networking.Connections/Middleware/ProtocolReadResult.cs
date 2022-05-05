@@ -1,4 +1,4 @@
-﻿namespace ThePlague.Networking.Connections
+﻿namespace ThePlague.Networking.Connections.Middleware
 {
     public readonly struct ProtocolReadResult<TMessage>
     {

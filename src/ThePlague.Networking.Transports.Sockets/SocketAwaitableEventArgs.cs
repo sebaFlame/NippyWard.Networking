@@ -42,6 +42,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         internal static readonly Action<object> _InvokeStateAsAction = state => ((Action)state)();
 
+        private readonly bool _isWrite;
+
         /// <summary>
         /// Create a new SocketAwaitableEventArgs instance, optionally providing a scheduler for callbacks
         /// </summary>
@@ -81,7 +83,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 ThrowSocketException(this._forcedError);
             }
 
-            if(this.SocketError != SocketError.Success)
+            if (this.SocketError != SocketError.Success)
             {
                 ThrowSocketException(this.SocketError);
             }

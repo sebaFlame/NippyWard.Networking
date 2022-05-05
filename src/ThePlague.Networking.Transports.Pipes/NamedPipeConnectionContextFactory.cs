@@ -4,11 +4,24 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Http.Features;
+
+using ThePlague.Networking.Connections;
 
 namespace ThePlague.Networking.Transports.Pipes
 {
     public class NamedPipeConnectionFactory : IConnectionFactory
     {
+        private IFeatureCollection _featureCollection;
+
+        internal NamedPipeConnectionFactory()
+        { }
+
+        public NamedPipeConnectionFactory(IFeatureCollection featureCollection)
+        {
+            this._featureCollection = featureCollection;
+        }
+
         public ValueTask<ConnectionContext> ConnectAsync
         (
             EndPoint endpoint,
@@ -23,7 +36,7 @@ namespace ThePlague.Networking.Transports.Pipes
                 );
             }
 
-            return NamedPipeConnectionContext.ConnectAsync(namedPipeEndPoint);
+            return NamedPipeConnectionContext.ConnectAsync(namedPipeEndPoint, featureCollection: this._featureCollection);
         }
     }
 }

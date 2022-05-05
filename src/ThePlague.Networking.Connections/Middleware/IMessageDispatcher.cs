@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Connections;
 
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Connections.Middleware
 {
     public interface IMessageDispatcher<TMessage>
     {
@@ -13,6 +13,7 @@ namespace ThePlague.Networking.Connections
 
         public Task DispatchMessageAsync
         (
+            ConnectionContext connectionContext,
             TMessage message
         );
 

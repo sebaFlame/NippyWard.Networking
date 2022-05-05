@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Buffers;
 
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Connections.Middleware
 {
     public interface IMessageReader<TMessage>
     {
