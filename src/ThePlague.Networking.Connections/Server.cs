@@ -40,6 +40,8 @@ namespace ThePlague.Networking.Connections
 
         ~Server()
         {
+            this._logger.LogTrace($"[Server] finalizer");
+
             this.Dispose(false);
         }
 
@@ -206,6 +208,8 @@ namespace ThePlague.Networking.Connections
             }
             finally
             {
+                logger.LogTrace($"[{connectionContext.ConnectionId}] disposing client");
+
                 reg.Dispose();
 
                 await connectionContext.DisposeAsync();

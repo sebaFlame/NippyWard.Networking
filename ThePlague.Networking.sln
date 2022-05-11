@@ -25,7 +25,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenSSL.Core.Generator", "d
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{CDF968B1-9651-4987-9199-CABF5299A22A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ThePlague.Networking.Tests", "test\ThePlague.Networking.Tests\ThePlague.Networking.Tests.csproj", "{891DEEB4-2FA1-4027-8D9E-C0F5CA3A1A3C}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ThePlague.Networking.Tests", "test\ThePlague.Networking.Tests\ThePlague.Networking.Tests.csproj", "{891DEEB4-2FA1-4027-8D9E-C0F5CA3A1A3C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{F72650CF-A4DE-4EAE-9D0F-CFC1CF4EA90D}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

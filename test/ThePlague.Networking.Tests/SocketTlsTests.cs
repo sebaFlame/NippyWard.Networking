@@ -23,6 +23,7 @@ namespace ThePlague.Networking.Tests
 {
     /* TODO
      * clean disposal (when aborted) */
+    [Collection("logging")]
     public class SocketTlsTests : BaseSocketDataTests, IDisposable
     {
         private X509Certificate ServerCertificate => this._tlsState.ServerCertificate;
@@ -64,8 +65,16 @@ namespace ThePlague.Networking.Tests
         {
             //Force TLS1.2 to enforce a real renegotiation 
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string nameSuffix = $"{endpoint}";
+
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseBlockingSendSocket
+                (
+                    endpoint,
+                    () => $"ServerRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -106,7 +115,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseSocket(() => "client")
+                .UseBlockingSendSocket
+                (
+                    () => $"ServerRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -144,13 +156,16 @@ namespace ThePlague.Networking.Tests
         {
             //Force TLS1.2 to enforce a real renegotiation 
 
-            byte[] serverSent = new byte[testSize];
-            byte[] clientSent = new byte[testSize];
-            byte[] serverReceived = new byte[testSize];
-            byte[] clientReceived = new byte[testSize];
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseBlockingSendSocket
+                (
+                    endpoint,
+                    () => $"DuplexRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -164,19 +179,24 @@ namespace ThePlague.Networking.Tests
 
                                 Task<int> serverReceiver = RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
-                                    serverReceived,
+                                    this._logger,
                                     true
                                 );
 
+                                CancellationTokenSource cts = new CancellationTokenSource();
+
                                 Task<int> serverSender = RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    serverSent,
-                                    true
+                                    this._logger,
+                                    true,
+                                    cts.Token
                                 );
 
                                 ITlsHandshakeFeature? handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>();
@@ -185,14 +205,14 @@ namespace ThePlague.Networking.Tests
                                     await handShakeFeature.RenegotiateAsync();
                                 }
 
-                                //continue sending/receiving data for atleast 100 milliseconds
-                                await Task.Delay(100);
-
-                                //complete sending and send close to client
+                                //complete sending after 100 milliseconds of sending and send close to client
+                                cts.CancelAfter(100);
+                                await serverSender;
                                 ctx.Transport.Output.Complete();
+                                cts.Dispose();
 
-                                //sender should stop
-                                await Task.WhenAll(serverSender, serverReceiver);
+                                //receiver should stop
+                                await serverReceiver;
 
                                 //stop reading
                                 ctx.Transport.Input.Complete();
@@ -202,7 +222,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseSocket(() => "client")
+                .UseBlockingSendSocket
+                (
+                    () => $"DuplexRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -212,20 +235,25 @@ namespace ThePlague.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
+                                CancellationTokenSource cts = new CancellationTokenSource();
+
                                 Task<int> clientSender = RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    clientSent,
-                                    true
+                                    this._logger,
+                                    true,
+                                    cts.Token
                                 );
 
                                 Task<int> clientReceiver = RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
-                                    clientReceived,
+                                    this._logger,
                                     true
                                 );
 
@@ -233,8 +261,10 @@ namespace ThePlague.Networking.Tests
                                 await clientReceiver;
 
                                 //confirm close to server
-                                ctx.Transport.Output.Complete();
+                                cts.Cancel();
                                 await clientSender;
+                                ctx.Transport.Output.Complete();
+                                cts.Dispose();
 
                                 //stop reading
                                 ctx.Transport.Input.Complete();

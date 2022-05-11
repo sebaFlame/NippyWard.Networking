@@ -25,6 +25,12 @@ namespace ThePlague.Networking.Tls
             this._tlsPipe = tlsPipe;
         }
 
+        public override bool CanGetUnflushedBytes
+            => this._tlsPipe.CanGetUnflushedBytes;
+
+        public override long UnflushedBytes
+            => this._tlsPipe.UnflushedBytes;
+
         public override void Advance(int bytes)
             => this._tlsPipe.Advance(bytes);
 

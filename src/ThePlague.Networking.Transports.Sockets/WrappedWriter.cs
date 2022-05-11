@@ -16,6 +16,12 @@ namespace ThePlague.Networking.Transports.Sockets
             this._connection = connection;
         }
 
+        public override bool CanGetUnflushedBytes
+            => this._writer.CanGetUnflushedBytes;
+
+        public override long UnflushedBytes
+            => this._writer.UnflushedBytes;
+
         public override void Complete(Exception exception = null)
         {
             this._connection.OutputWriterCompleted(exception);

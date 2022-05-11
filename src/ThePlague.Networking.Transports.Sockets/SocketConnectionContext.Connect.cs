@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 
+using ThePlague.Networking.Connections;
+
 namespace ThePlague.Networking.Transports.Sockets
 {
     public partial class SocketConnectionContext
@@ -82,6 +84,8 @@ namespace ThePlague.Networking.Transports.Sockets
             }
 
             SetRecommendedClientOptions(socket);
+
+            logger.TraceLog(name, $"connecting to {endpoint}");
 
             using(SocketAwaitableEventArgs args = new SocketAwaitableEventArgs
             (

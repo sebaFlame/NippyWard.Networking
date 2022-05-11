@@ -3,6 +3,7 @@ using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
@@ -14,22 +15,25 @@ namespace ThePlague.Networking.Transports.Sockets
     public class SocketConnectionContextFactory : IConnectionFactory
     {
         private IFeatureCollection _featureCollection;
+        private readonly Func<string> _createName;
+        private readonly PipeOptions _sendOptions;
+        private readonly PipeOptions _receiveOptions;
         private readonly ILogger _logger;
-        private Func<string> _createName;
 
-        public SocketConnectionContextFactory(Func<string> createName, ILogger logger = null)
+        public SocketConnectionContextFactory
+        (
+            Func<string> createName = null,
+            PipeOptions sendOptions = null,
+            PipeOptions receiveOptions = null,
+            IFeatureCollection featureCollection = null,
+            ILogger logger = null
+        )
         {
             this._createName = createName;
-            this._logger = logger;
-        }
-
-        public SocketConnectionContextFactory(ILogger logger = null)
-            : this(() => string.Empty, logger)
-        { }
-
-        public SocketConnectionContextFactory(IFeatureCollection featureCollection)
-        {
+            this._sendOptions = sendOptions;
+            this._receiveOptions = receiveOptions;
             this._featureCollection = featureCollection;
+            this._logger = logger;
         }
 
         public ValueTask<ConnectionContext> ConnectAsync
@@ -40,6 +44,8 @@ namespace ThePlague.Networking.Transports.Sockets
             => SocketConnectionContext.ConnectAsync
             (
                 endpoint,
+                sendPipeOptions: this._sendOptions,
+                receivePipeOptions: this._receiveOptions,
                 featureCollection: this._featureCollection,
                 name: this._createName(),
                 logger: this._logger

@@ -36,7 +36,7 @@ namespace ThePlague.Networking.Transports.Sockets
             ValueTask<ReadResult> read;
             ReadOnlySequence<byte> buffer;
 
-            this.DebugLog("starting send loop");
+            this.TraceLog("starting send loop");
             try
             {
                 this._writerArgs = writerArgs = new SocketAwaitableEventArgs
@@ -46,7 +46,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
                 while(true)
                 {
-                    this.DebugLog("awaiting data from pipe...");
+                    this.TraceLog("awaiting data from pipe...");
                     if (!reader.TryRead(out result))
                     {
                         read = reader.ReadAsync();
@@ -54,11 +54,17 @@ namespace ThePlague.Networking.Transports.Sockets
                         if(read.IsCompletedSuccessfully)
                         {
                             result = read.Result;
+                            this.TraceLog("sync async read");
                         }
                         else
                         {
                             result = await read;
+                            this.TraceLog("async read");
                         }
+                    }
+                    else
+                    {
+                        this.TraceLog("sync read");
                     }
 
                     buffer = result.Buffer;
@@ -66,7 +72,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     if(result.IsCanceled
                         || (result.IsCompleted && buffer.IsEmpty))
                     {
-                        this.DebugLog(result.IsCanceled ? "cancelled" : "complete");
+                        this.TraceLog(result.IsCanceled ? "cancelled" : "complete");
                         break;
                     }
 
@@ -74,7 +80,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     {
                         if(!buffer.IsEmpty)
                         {
-                            this.DebugLog($"sending {buffer.Length} bytes over socket...");
+                            this.TraceLog($"sending {buffer.Length} bytes over socket...");
                             DoSend(socket, writerArgs, buffer, ref this._spareBuffer);
                             Interlocked.Add
                             (
@@ -85,13 +91,13 @@ namespace ThePlague.Networking.Transports.Sockets
 
                         if(result.IsCompleted)
                         {
-                            this.DebugLog("completed");
+                            this.TraceLog("completed");
                             break;
                         }
                     }
                     finally
                     {
-                        this.DebugLog("advancing");
+                        this.TraceLog("advancing");
                         reader.AdvanceTo(buffer.End);
                     }
                 }
@@ -109,7 +115,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     PipeShutdownKind.WriteSocketError, ex.SocketErrorCode
                 );
 
-                this.DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TraceLog($"fail: {ex.SocketErrorCode}");
 
                 error = null;
             }
@@ -120,7 +126,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     PipeShutdownKind.WriteSocketError, ex.SocketErrorCode
                 );
 
-                this.DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TraceLog($"fail: {ex.SocketErrorCode}");
 
                 error = ex;
             }
@@ -128,7 +134,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteDisposed);
 
-                this.DebugLog("fail: disposed");
+                this.TraceLog("fail: disposed");
 
                 error = null;
             }
@@ -136,7 +142,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteIOException);
 
-                this.DebugLog($"fail - io: {ex.Message}");
+                this.TraceLog($"fail - io: {ex.Message}");
 
                 error = ex;
             }
@@ -144,7 +150,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteException);
 
-                this.DebugLog($"fail: {ex.Message}");
+                this.TraceLog($"fail: {ex.Message}");
 
                 error = new IOException(ex.Message, ex);
             }
@@ -156,14 +162,14 @@ namespace ThePlague.Networking.Transports.Sockets
                 this._sendAborted = true;
                 try
                 {
-                    this.DebugLog($"shutting down socket-send");
+                    this.TraceLog($"shutting down socket-send");
                     socket.Shutdown(SocketShutdown.Send);
                 }
                 catch { }
 
                 // close *both halves* of the send pipe; we're not
                 // listening *and* we don't want anyone trying to write
-                this.DebugLog($"marking {nameof(this.Output)} as complete");
+                this.TraceLog($"marking {nameof(this.Output)} as complete");
                 try
                 {
                     writer.Complete(error);
@@ -197,7 +203,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 }
             }
 
-            this.DebugLog(error == null ? "exiting with success" : $"exiting with failure: {error.Message}");
+            this.TraceLog(error == null ? $"exiting with success ({this._totalBytesSent} bytes sent)" : $"exiting with failure ({this._totalBytesSent} bytes sent): {error.Message}");
             //return error;
         }
 

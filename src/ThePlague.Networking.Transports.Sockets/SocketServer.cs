@@ -3,11 +3,15 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
+
+using ThePlague.Networking.Connections;
+using System.Runtime.CompilerServices;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -18,13 +22,15 @@ namespace ThePlague.Networking.Transports.Sockets
         : IConnectionListener,
             IDisposable
     {
-        public EndPoint EndPoint { get; private set; }
+        public EndPoint EndPoint => this._endpoint;
 
+        private readonly EndPoint _endpoint;
         private Socket _listenerSocket;
         private PipeOptions _sendOptions;
         private PipeOptions _receiveOptions;
         private readonly IFeatureCollection _serverFeatureCollection;
         private readonly ILogger _logger;
+        private readonly Func<string> _createName;
 
         /// <summary>
         /// Create a new instance of a socket server
@@ -32,24 +38,14 @@ namespace ThePlague.Networking.Transports.Sockets
         public SocketServer
         (
             EndPoint endPoint,
+            IFeatureCollection serverFeatureCollection = null,
+            Func<string> createName = null,
             ILogger logger = null
         )
         {
-            this.EndPoint = endPoint;
+            this._endpoint = endPoint;
+            this._createName = createName;
             this._logger = logger;
-        }
-
-        /// <summary>
-        /// Create a new instance of a socket server
-        /// </summary>
-        public SocketServer
-        (
-            EndPoint endPoint,
-            IFeatureCollection serverFeatureCollection,
-            ILogger logger = null
-        )
-            : this(endPoint, logger)
-        {
             this._serverFeatureCollection = serverFeatureCollection;
         }
 
@@ -81,13 +77,15 @@ namespace ThePlague.Networking.Transports.Sockets
                 );
             }
 
+            this.TraceLog("binding");
+
             Socket listener = new Socket
             (
                 addressFamily,
                 SocketType.Stream,
                 protocolType
             );
-
+           
             listener.Bind(this.EndPoint);
             listener.Listen(listenBacklog);
 
@@ -118,6 +116,8 @@ namespace ThePlague.Networking.Transports.Sockets
         /// </summary>
         public void Stop()
         {
+            this.TraceLog("stopping");
+
             Socket socket = this._listenerSocket;
             this._listenerSocket = null;
 
@@ -142,6 +142,8 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 Socket clientSocket = await this._listenerSocket.AcceptAsync();
 
+                this.TraceLog($"new connection: {clientSocket.RemoteEndPoint}");
+
                 SocketConnectionContext.SetRecommendedServerOptions
                 (
                     clientSocket
@@ -153,6 +155,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     sendPipeOptions: this._sendOptions,
                     receivePipeOptions: this._receiveOptions,
                     serverFeatureCollection: this._serverFeatureCollection,
+                    name: this._createName(),
                     logger: this._logger
                 );
             }
@@ -188,6 +191,14 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this.Stop();
             return default;
+        }
+
+        [Conditional("TRACE")]
+        private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
+        {
+#if TRACE
+            this._logger?.TraceLog($"SocketServer ({this._endpoint})", message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+#endif
         }
 
         /// <summary>

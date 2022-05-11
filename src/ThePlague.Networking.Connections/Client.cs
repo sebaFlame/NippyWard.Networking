@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -34,6 +35,8 @@ namespace ThePlague.Networking.Connections
 
         ~Client()
         {
+            this._logger.LogTrace($"[{this._connectionContext.ConnectionId}] finalizer");
+
             this.Dispose(false);
         }
 
@@ -79,6 +82,8 @@ namespace ThePlague.Networking.Connections
             }
             finally
             {
+                this._logger.LogTrace($"[{this._connectionContext.ConnectionId}] disposing client");
+
                 reg.Dispose();
 
                 await this._connectionContext.DisposeAsync();

@@ -22,6 +22,12 @@ namespace ThePlague.Networking.Pipelines
             this._innerReader = innerPipe.Input;
         }
 
+        public override bool CanGetUnflushedBytes
+            => this._innerWriter.CanGetUnflushedBytes;
+
+        public override long UnflushedBytes
+            => this._innerWriter.UnflushedBytes;
+
         public override void Advance(int bytes)
             => this._innerWriter.Advance(bytes);
 

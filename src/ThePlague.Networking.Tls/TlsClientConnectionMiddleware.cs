@@ -36,12 +36,18 @@ namespace ThePlague.Networking.Tls
 
             try
             {
-                using (TlsPipe pipe = new TlsPipe(oldPipe.Input, oldPipe.Output, this._logger))
+                using (TlsPipe pipe = new TlsPipe
+                (
+                    context.ConnectionId,
+                    oldPipe.Input,
+                    oldPipe.Output,
+                    this._logger
+                ))
                 {
                     context.Features.Set<ITlsConnectionFeature>(pipe);
                     context.Features.Set<ITlsHandshakeFeature>(pipe);
 
-                    this._logger.LogDebug("Activating TLS transport");
+                    this._logger.LogDebug($"[{context.ConnectionId}] Activating TLS transport");
                     await pipe.AuthenticateAsClientAsync
                     (
                         this._sslOptions,
@@ -55,7 +61,7 @@ namespace ThePlague.Networking.Tls
             }
             finally
             {
-                this._logger.LogDebug("Deactivating TLS transport");
+                this._logger.LogDebug($"[{context.ConnectionId}] Deactivating TLS transport");
                 context.Transport = oldPipe;
             }
         }

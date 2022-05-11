@@ -21,6 +21,7 @@ using ThePlague.Networking.Connections.Middleware;
 
 namespace ThePlague.Networking.Tests
 {
+    [Collection("logging")]
     public class ClientBuilderTests : BaseSocketTests
     {
         public ClientBuilderTests(ServicesState serviceState)
@@ -35,19 +36,23 @@ namespace ThePlague.Networking.Tests
 
             serverClientCompleted = new TaskCompletionSource();
             clientCompleted = new TaskCompletionSource();
+            int serverClientIndex = 0;
+            int clientIndex = 0;
 
             Task serverTask = CreatServerBuilder
             (
                 this.ServiceProvider,
                 endPoint,
-                serverClientCompleted
+                serverClientCompleted,
+                () => $"ClientTaskTest_server_{serverClientIndex++}_{endPoint}"
             )
                 .BuildSingleClient();
 
             Task clientTask = CreateClientBuilder
             (
                 this.ServiceProvider,
-                clientCompleted
+                clientCompleted,
+                () => $"ClientTaskTest_client_{clientIndex++}_{endPoint}"
             )
                 .Build(endPoint);
 
@@ -65,19 +70,23 @@ namespace ThePlague.Networking.Tests
 
             serverClientCompleted = new TaskCompletionSource();
             clientCompleted = new TaskCompletionSource();
+            int serverClientIndex = 0;
+            int clientIndex = 0;
 
             Task serverTask = CreatServerBuilder
             (
                 this.ServiceProvider,
                 endPoint,
-                serverClientCompleted
+                serverClientCompleted,
+                () => $"ClientTest_server_{serverClientIndex++}_{endPoint}"
             )
                 .BuildSingleClient();
 
             Client client = await CreateClientBuilder
             (
                 this.ServiceProvider,
-                clientCompleted
+                clientCompleted,
+                () => $"ClientTest_client_{clientIndex++}_{endPoint}"
             )
                 .BuildClient(endPoint);
 
@@ -97,19 +106,23 @@ namespace ThePlague.Networking.Tests
 
             serverClientCompleted = new TaskCompletionSource();
             clientCompleted = new TaskCompletionSource();
+            int serverClientIndex = 0;
+            int clientIndex = 0;
 
             Task serverTask = CreatServerBuilder
             (
                 this.ServiceProvider,
                 endPoint,
-                serverClientCompleted
+                serverClientCompleted,
+                () => $"ClientFactoryTest_server_{serverClientIndex++}_{endPoint}"
             )
                 .BuildSingleClient();
 
             ClientFactory clientFactory = CreateClientBuilder
             (
                 this.ServiceProvider,
-                clientCompleted
+                clientCompleted,
+                () => $"ClientFactoryTest_client_{clientIndex++}_{endPoint}"
             )
                 .BuildClientFactory();
 
@@ -131,8 +144,15 @@ namespace ThePlague.Networking.Tests
             TaskCompletionSource clientConnected = new TaskCompletionSource();
             TaskCompletionSource clientTerminal = new TaskCompletionSource();
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseSocket
+                (
+                    endpoint,
+                    () => $"CancellableClientTaskTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureSingleConnection()
                 .ConfigureConnection
                 (
@@ -148,7 +168,10 @@ namespace ThePlague.Networking.Tests
                 await server.StartAsync();
 
                 Task clientTask = new ClientBuilder(this.ServiceProvider)
-                    .UseSocket()
+                    .UseBlockingSendSocket
+                    (
+                        () => $"CancellableClientTaskTest_client_{clientIndex++}_{endpoint}"
+                    )
                     .ConfigureConnection
                     (
                         (c) =>
@@ -184,8 +207,15 @@ namespace ThePlague.Networking.Tests
             TaskCompletionSource clientConnected = new TaskCompletionSource();
             TaskCompletionSource clientTerminal = new TaskCompletionSource();
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseSocket
+                (
+                    endpoint,
+                    () => $"DisposableClientTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureSingleConnection()
                 .ConfigureConnection
                 (
@@ -201,7 +231,10 @@ namespace ThePlague.Networking.Tests
                 await server.StartAsync();
 
                 Client client = await new ClientBuilder(this.ServiceProvider)
-                    .UseSocket()
+                    .UseBlockingSendSocket
+                    (
+                        () => $"DisposableClientTest_client_{clientIndex++}_{endpoint}"
+                    )
                     .ConfigureConnection
                     (
                         (c) =>

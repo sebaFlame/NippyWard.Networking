@@ -5,12 +5,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
+
+using ThePlague.Networking.Connections;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -186,7 +189,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private bool TrySetShutdown(PipeShutdownKind kind)
         {
-            if(kind != PipeShutdownKind.None
+            if (kind != PipeShutdownKind.None
                 && Interlocked.CompareExchange
                 (
                     ref this._socketShutdownKind,
@@ -247,6 +250,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         public override void Abort(ConnectionAbortedException abortReason)
         {
+            this.TraceLog("abort on ConnectionContext called");
+
             this.TrySetShutdown
             (
                 PipeShutdownKind.ConnectionAborted
@@ -284,6 +289,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
             this.Dispose();
 
+            this.TraceLog("awaiting Receive/Send thread");
+
             //ensure receive/send thread ended
             //this should always happen as socket gets disposed
             //and Pipes get completed
@@ -308,6 +315,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private void Dispose(bool isDisposing)
         {
+            this.TraceLog("disposing");
+
             this.TrySetShutdown(PipeShutdownKind.PipeDisposed);
 
             try
@@ -544,17 +553,12 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly PipeOptions _receiveOptions, _sendOptions;
         private readonly ILogger _logger;
 
-        private void DebugLog(string message, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
-            => DebugLog(this._logger, this.ConnectionId, message, $"{caller}#{lineNumber}");
-
-        private static void DebugLog(ILogger logger, string connectionId, string message, string caller = null)
+        [Conditional("TRACE")]
+        private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
         {
-            if (logger is null)
-            {
-                return;
-            }
-
-            logger.LogDebug($"[{connectionId}, {caller}] {message}");
+#if TRACE
+            this._logger?.TraceLog(this.ConnectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+#endif
         }
     }
 }

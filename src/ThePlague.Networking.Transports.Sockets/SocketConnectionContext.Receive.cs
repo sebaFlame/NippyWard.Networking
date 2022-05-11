@@ -38,7 +38,7 @@ namespace ThePlague.Networking.Transports.Sockets
             FlushResult result;
             Memory<byte> buffer;
 
-            this.DebugLog("starting receive loop");
+            this.TraceLog("starting receive loop");
             try
             {
                 this._readerArgs = readerArgs = new SocketAwaitableEventArgs
@@ -50,13 +50,13 @@ namespace ThePlague.Networking.Transports.Sockets
                 {
                     if(zeroLengthReads && socket.Available == 0)
                     {
-                        this.DebugLog($"awaiting zero-length receive...");
+                        this.TraceLog($"awaiting zero-length receive...");
 
                         DoReceive(socket, readerArgs, default);
 
                         await readerArgs;
 
-                        this.DebugLog($"zero-length receive complete; now {Socket.Available} bytes available");
+                        this.TraceLog($"zero-length receive complete; now {Socket.Available} bytes available");
 
                         // this *could* be because data is now available, or it *could* be because of
                         // the EOF; we can't really trust Available, so now we need to do a non-empty
@@ -64,21 +64,21 @@ namespace ThePlague.Networking.Transports.Sockets
                     }
 
                     buffer = writer.GetMemory(1);
-                    this.DebugLog($"leased {buffer.Length} bytes from pipe");
+                    this.TraceLog($"leased {buffer.Length} bytes from pipe");
 
                     try
                     {
-                        this.DebugLog($"initiating socket receive...");
+                        this.TraceLog($"initiating socket receive...");
 
                         DoReceive(socket, readerArgs, buffer);
 
-                        this.DebugLog(_readerArgs.IsCompleted ? "receive is sync" : "receive is async");
+                        this.TraceLog(_readerArgs.IsCompleted ? "receive is sync" : "receive is async");
 
                         int bytesReceived = await readerArgs;
 
                         this.LastReceived = bytesReceived;
 
-                        this.DebugLog($"received {bytesReceived} bytes ({_readerArgs.BytesTransferred}, {_readerArgs.SocketError})");
+                        this.TraceLog($"received {bytesReceived} bytes ({_readerArgs.BytesTransferred}, {_readerArgs.SocketError})");
 
                         if (bytesReceived <= 0)
                         {
@@ -102,19 +102,19 @@ namespace ThePlague.Networking.Transports.Sockets
                         // commit?
                     }
 
-                    this.DebugLog("flushing pipe");
+                    this.TraceLog("flushing pipe");
 
                     flushTask = writer.FlushAsync();
 
                     if(flushTask.IsCompletedSuccessfully)
                     {
                         result = flushTask.Result;
-                        this.DebugLog("pipe flushed (sync)");
+                        this.TraceLog("pipe flushed (sync)");
                     }
                     else
                     {
                         result = await flushTask;
-                        this.DebugLog("pipe flushed (async)");
+                        this.TraceLog("pipe flushed (async)");
                     }
 
                     if(result.IsCompleted)
@@ -146,7 +146,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
                 );
 
-                this.DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TraceLog($"fail: {ex.SocketErrorCode}");
 
                 error = new ConnectionResetException(ex.Message, ex);
             }
@@ -164,7 +164,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
                 );
 
-                this.DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TraceLog($"fail: {ex.SocketErrorCode}");
 
                 if (!this._receiveAborted)
                 {
@@ -179,7 +179,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     PipeShutdownKind.ReadSocketError, ex.SocketErrorCode
                 );
 
-                this.DebugLog($"fail: {ex.SocketErrorCode}");
+                this.TraceLog($"fail: {ex.SocketErrorCode}");
 
                 error = ex;
             }
@@ -187,7 +187,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.ReadDisposed);
 
-                this.DebugLog($"fail: disposed");
+                this.TraceLog($"fail: disposed");
 
                 if (!this._receiveAborted)
                 {
@@ -198,7 +198,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.ReadIOException);
 
-                this.DebugLog($"fail - io: {ex.Message}");
+                this.TraceLog($"fail - io: {ex.Message}");
 
                 error = ex;
             }
@@ -206,7 +206,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this.TrySetShutdown(PipeShutdownKind.ReadException);
 
-                this.DebugLog($"fail: {ex.Message}");
+                this.TraceLog($"fail: {ex.Message}");
 
                 error = new IOException(ex.Message, ex);
             }
@@ -218,7 +218,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 }
                 try
                 {
-                    this.DebugLog($"shutting down socket-receive");
+                    this.TraceLog($"shutting down socket-receive");
                     this.Socket.Shutdown(SocketShutdown.Receive);
                 }
                 catch { }
@@ -226,7 +226,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 // close the *writer* half of the receive pipe; we won't
                 // be writing any more, but callers can still drain the
                 // pipe if they choose
-                this.DebugLog($"marking {nameof(this.Input)} as complete");
+                this.TraceLog($"marking {nameof(this.Input)} as complete");
                 try
                 {
                     writer.Complete(error);
@@ -248,7 +248,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 }
             }
 
-            this.DebugLog(error == null ? "exiting with success" : $"exiting with failure: {error.Message}");
+            this.TraceLog(error == null ? $"exiting with success ({this._totalBytesReceived} bytes received)" : $"exiting with failure ({this._totalBytesReceived} bytes received): {error.Message}");
             //return error;
         }
 

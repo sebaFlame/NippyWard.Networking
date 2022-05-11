@@ -34,6 +34,12 @@ namespace ThePlague.Networking.Connections.Middleware
             }
         }
 
+        public override bool CanGetUnflushedBytes
+            => this._pipe.Output.CanGetUnflushedBytes;
+
+        public override long UnflushedBytes
+            => this._pipe.Output.UnflushedBytes;
+
         public override void Advance(int bytes)
             => this._pipe.Output.Advance(bytes);
 

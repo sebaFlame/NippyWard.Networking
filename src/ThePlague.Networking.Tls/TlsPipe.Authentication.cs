@@ -45,7 +45,7 @@ namespace ThePlague.Networking.Tls
                 ciphers: ciphers
             );
 
-            return Authenticate
+            return this.Authenticate
             (
                 this._ssl,
                 this._innerReader,
@@ -69,7 +69,7 @@ namespace ThePlague.Networking.Tls
                 sslOptions
             );
 
-            return Authenticate
+            return this.Authenticate
             (
                 this._ssl,
                 this._innerReader,
@@ -260,7 +260,7 @@ namespace ThePlague.Networking.Tls
                 ciphers: ciphers
             );
 
-            return Authenticate
+            return this.Authenticate
             (
                 this._ssl,
                 this._innerReader,
@@ -284,7 +284,7 @@ namespace ThePlague.Networking.Tls
                 sslOptions
             );
 
-            return Authenticate
+            return this.Authenticate
             (
                 this._ssl,
                 this._innerReader,
@@ -308,7 +308,7 @@ namespace ThePlague.Networking.Tls
                 sslContext
             );
 
-            return Authenticate
+            return this.Authenticate
             (
                 this._ssl,
                 this._innerReader,

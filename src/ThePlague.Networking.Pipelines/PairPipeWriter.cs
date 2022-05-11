@@ -103,6 +103,12 @@ namespace ThePlague.Networking.Pipelines
             return flushResult;
         }
 
+        public override bool CanGetUnflushedBytes
+            => this._writer.CanGetUnflushedBytes;
+
+        public override long UnflushedBytes
+            => this._writer.UnflushedBytes;
+
         public override Memory<byte> GetMemory(int sizeHint = 0)
             => this._writer.GetMemory(sizeHint);
 

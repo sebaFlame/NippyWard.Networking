@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -26,7 +27,7 @@ namespace ThePlague.Networking.Tests
         private const string _ClientHello = "Hello Server";
 
         private ITestOutputHelper _testOutputHelper;
-        private ILogger _logger;
+        protected readonly ILogger _logger;
 
         public BaseSocketDataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
             : base(serviceState)
@@ -44,10 +45,19 @@ namespace ThePlague.Networking.Tests
         {
             byte[] result = new byte[_ServerHello.Length * 2];
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string namePrefix = this.GetType().Name;
+            string nameSuffix = $"{endpoint}";
+
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket(endpoint)
+                        .UseBlockingSendSocket
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_ServerDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -83,7 +93,10 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket()
+                        .UseBlockingSendSocket
+                        (
+                            () => $"{namePrefix}_ServerDataTest_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -128,10 +141,19 @@ namespace ThePlague.Networking.Tests
         {
             byte[] result = new byte[_ClientHello.Length * 2];
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string namePrefix = this.GetType().Name;
+            string nameSuffix = $"{endpoint}";
+
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket(endpoint)
+                        .UseBlockingSendSocket
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_ClientDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -166,7 +188,10 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket()
+                        .UseBlockingSendSocket
+                        (
+                            () => $"{namePrefix}_ClientDataTest_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -212,11 +237,13 @@ namespace ThePlague.Networking.Tests
 
         protected static async Task<int> RandomDataSender
         (
+            string connectionId,
             PipeWriter writer,
             int maxBufferSize,
             int testSize,
-            byte[] sent,
-            bool sendContinuous = false
+            ILogger logger,
+            bool sendContinuous = false,
+            CancellationToken cancellationToken = default
         )
         {
             int bytesSent = 0;
@@ -240,10 +267,18 @@ namespace ThePlague.Networking.Tests
                     adjustedSize = testSize - bytesSent;
                 }
 
+                //don't try sending 0 bytes
+                if(!sendContinuous 
+                    && adjustedSize <= 0)
+                {
+                    break;
+                }
+
                 try
                 {
                     //fill buffer with random data
                     writeMemory = writer.GetMemory(randomSize);
+                    logger.TraceLog(connectionId, "buffer acquired");
 
                     //worth about 1/4 CPU time of test method (!!!)
                     OpenSSL.Core.Interop.Random.PseudoBytes(writeMemory.Span);
@@ -251,31 +286,31 @@ namespace ThePlague.Networking.Tests
                     //only advance computed size, should always be >= 0
                     //because the loop will end after this call
                     writer.Advance(sendContinuous ? randomSize : adjustedSize);
+                    logger.TraceLog(connectionId, $"buffer advanced ({(sendContinuous ? randomSize : adjustedSize)})");
 
-                    flushResultTask = writer.FlushAsync();
+                    logger.TraceLog(connectionId, "flush initiated");
+                    flushResultTask = writer.FlushAsync(cancellationToken);
 
                     if (!flushResultTask.IsCompletedSuccessfully)
                     {
                         flushResult = await flushResultTask;
+                        logger.TraceLog(connectionId, "async flush");
                     }
                     else
                     {
                         flushResult = flushResultTask.Result;
+                        logger.TraceLog(connectionId, "sync async flush");
                     }
                 }
-                catch(Exception ex)
+                catch(OperationCanceledException)
                 {
-                    break;
-                }
-
-                if (adjustedSize > 0)
-                {
-                    writeMemory.Slice(0, adjustedSize).CopyTo(new Memory<byte>(sent, bytesSent, adjustedSize));
+                    return bytesSent;
                 }
                 
                 bytesSent += (sendContinuous ? randomSize : adjustedSize);
 
-                if(flushResult.IsCompleted)
+                if(flushResult.IsCompleted
+                    || flushResult.IsCanceled)
                 {
                     break;
                 }
@@ -286,10 +321,12 @@ namespace ThePlague.Networking.Tests
 
         protected static async Task<int> RandomDataReceiver
         (
+            string connectionId,
             PipeReader pipeReader,
             int testSize,
-            byte[] received,
-            bool receiveContinuous = true
+            ILogger logger,
+            bool receiveContinuous = true,
+            CancellationToken cancellationToken = default
         )
         {
             //ensure it does not go through synchronous
@@ -303,23 +340,26 @@ namespace ThePlague.Networking.Tests
             while(receiveContinuous
                 || bytesReceived < testSize)
             {
-                //do not pass cancellation. end should come from peer
                 try
                 {
-                    readResultTask = pipeReader.ReadAsync();
+                    //do not pass cancellation. end should come from peer
+                    logger.TraceLog(connectionId, "read initiated");
+                    readResultTask = pipeReader.ReadAsync(cancellationToken);
 
                     if (!readResultTask.IsCompletedSuccessfully)
                     {
                         readResult = await readResultTask;
+                        logger.TraceLog(connectionId, "async read");
                     }
                     else
                     {
                         readResult = readResultTask.Result;
+                        logger.TraceLog(connectionId, "sync async read");
                     }
                 }
-                catch(Exception ex)
+                catch(OperationCanceledException)
                 {
-                    break;
+                    return bytesReceived;
                 }
 
                 foreach(ReadOnlyMemory<byte> memory in readResult.Buffer)
@@ -336,17 +376,14 @@ namespace ThePlague.Networking.Tests
                         length = testSize - bytesReceived;
                     }
 
-                    if (length > 0)
-                    {
-                        memory.Slice(0, length).CopyTo(new Memory<byte>(received, bytesReceived, length));
-                    }
-
                     bytesReceived += (receiveContinuous ? memory.Length : length);
                 }
 
                 pipeReader.AdvanceTo(readResult.Buffer.End);
+                logger.TraceLog(connectionId, "reader advanced");
 
-                if (readResult.IsCompleted)
+                if (readResult.IsCompleted
+                    || readResult.IsCanceled)
                 {
                     break;
                 }
@@ -360,13 +397,20 @@ namespace ThePlague.Networking.Tests
         public async Task ServerWriteCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
-            byte[] sent = new byte[testSize];
-            byte[] received = new byte[testSize];
+
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string namePrefix = this.GetType().Name;
+            string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket(endpoint)
+                        .UseBlockingSendSocket
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_ServerWriteCloseRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -380,10 +424,11 @@ namespace ThePlague.Networking.Tests
 
                                 bytesSent = await RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    sent
+                                    this._logger
                                 );
 
                                 //close writer and send close to client
@@ -409,7 +454,10 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket(() => "client")
+                        .UseBlockingSendSocket
+                        (
+                            () => $"{namePrefix}_ServerWriteCloseRandomDataTest_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -421,9 +469,10 @@ namespace ThePlague.Networking.Tests
                             {
                                 bytesReceived = await RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
-                                    received
+                                    this._logger
                                 );
 
                                 //close sender and send close to server
@@ -440,11 +489,6 @@ namespace ThePlague.Networking.Tests
 
             Assert.Equal(testSize, bytesSent);
             Assert.Equal(bytesSent, bytesReceived);
-
-            //TODO: random failures
-            /*
-            Assert.True(sent.SequenceEqual(received));
-            */
         }
 
         [Theory]
@@ -452,14 +496,21 @@ namespace ThePlague.Networking.Tests
         public async Task ClientReadCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
-            byte[] sent = new byte[testSize];
-            byte[] received = new byte[testSize];
             Task<int> clientSender;
+
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string namePrefix = this.GetType().Name;
+            string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket(endpoint)
+                        .UseBlockingSendSocket
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_ClientReadCloseRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -474,9 +525,10 @@ namespace ThePlague.Networking.Tests
 
                                 bytesReceived = await RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     reader,
                                     testSize,
-                                    received,
+                                    this._logger,
                                     false
                                 );
 
@@ -513,7 +565,10 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket(() => "client")
+                        .UseBlockingSendSocket
+                        (
+                            () => $"{namePrefix}_ClientReadCloseRandomDataTest_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -525,28 +580,28 @@ namespace ThePlague.Networking.Tests
                             {
                                 ReadResult readResult = default;
 
+                                CancellationTokenSource cts = new CancellationTokenSource();
+
                                 clientSender = RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    sent,
-                                    true
+                                    this._logger,
+                                    true,
+                                    cts.Token
                                 );
 
-                                try
-                                {
-                                    //wait until server sender sends shutdown
-                                    readResult = await ctx.Transport.Input.ReadAsync();
-                                }
-                                catch
-                                { }
-
+                                //wait until server sender sends shutdown
+                                readResult = await ctx.Transport.Input.ReadAsync();
                                 Assert.True(readResult.IsCompleted);
 
                                 //complete sender
-                                ctx.Transport.Output.Complete();
+                                cts.Cancel();
                                 bytesSent = await clientSender;
+                                ctx.Transport.Output.Complete();
+                                cts.Dispose();
 
                                 //also complete input (which should already be completed)
                                 //due to close receievd from server through ReadAsync
@@ -560,11 +615,6 @@ namespace ThePlague.Networking.Tests
 
             Assert.Equal(testSize, bytesReceived);
             Assert.True(bytesSent >= bytesReceived);
-
-            //TODO: random failures
-            /*
-            Assert.True(sent.SequenceEqual(received));
-            */
         }
 
         [Theory]
@@ -573,17 +623,22 @@ namespace ThePlague.Networking.Tests
         {
             int serverBytesSent = 0, serverBytesReceived = 0;
             int clientBytesSent = 0, clientBytesReceived = 0;
-            byte[] serverSent = new byte[testSize];
-            byte[] clientSent = new byte[testSize];
-            byte[] serverReceived = new byte[testSize];
-            byte[] clientReceived = new byte[testSize];
 
             Task<int> serverSender, serverReceiver, clientSender, clientReceiver;
+
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+            string namePrefix = this.GetType().Name;
+            string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket(endpoint)
+                        .UseBlockingSendSocket
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_DuplexRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -595,18 +650,20 @@ namespace ThePlague.Networking.Tests
                             {
                                 serverReceiver = RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
-                                    serverReceived,
+                                    this._logger,
                                     true
                                 );
 
                                 serverSender = RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    serverSent,
+                                    this._logger,
                                     false
                                 );
 
@@ -633,7 +690,10 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket(() => "client")
+                        .UseBlockingSendSocket
+                        (
+                            () => $"{namePrefix}_DuplexRandomDataTest_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -645,18 +705,20 @@ namespace ThePlague.Networking.Tests
                             {
                                 clientReceiver = RandomDataReceiver
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
-                                    clientReceived,
+                                    this._logger,
                                     true
                                 );
 
                                 clientSender = RandomDataSender
                                 (
+                                    ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
-                                    clientSent,
+                                    this._logger,
                                     false
                                 );
 
@@ -682,16 +744,8 @@ namespace ThePlague.Networking.Tests
             Assert.Equal(testSize, serverBytesSent);
             Assert.Equal(serverBytesSent, clientBytesReceived);
 
-            /* TODO: random failures
-            Assert.True(serverSent.SequenceEqual(clientReceived));
-            */
-
             Assert.Equal(testSize, clientBytesSent);
             Assert.Equal(clientBytesSent, serverBytesReceived);
-
-            /* TODO: random failures
-            Assert.True(clientSent.SequenceEqual(serverReceived));
-            */
         }
     }
 }

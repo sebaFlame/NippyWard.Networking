@@ -20,6 +20,7 @@ using ThePlague.Networking.Transports.Sockets;
 
 namespace ThePlague.Networking.Tests
 {
+    [Collection("logging")]
     public class ServerBuilderTests : BaseSocketTests
     {
         public ServerBuilderTests(ServicesState serviceState)
@@ -35,18 +36,24 @@ namespace ThePlague.Networking.Tests
             serverClientCompleted = new TaskCompletionSource();
             clientCompleted = new TaskCompletionSource();
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Task serverTask = CreatServerBuilder
             (
                 this.ServiceProvider,
                 endPoint,
-                serverClientCompleted
+                serverClientCompleted,
+                () => $"ServerTaskSingleClientTest_server_{serverClientIndex++}_{endPoint}"
+
             )
                 .BuildSingleClient();
 
             Task clientTask = CreateClientBuilder
             (
                 this.ServiceProvider,
-                clientCompleted
+                clientCompleted,
+                () => $"ServerTaskSingleClientTest_client_{clientIndex++}_{endPoint}"
             )
                 .Build(endPoint);
 
@@ -67,8 +74,15 @@ namespace ThePlague.Networking.Tests
             TaskCompletionSource[] clientContinue = new TaskCompletionSource[maxClient];
             int currentClientIndex = 0;
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseSocket
+                (
+                    endpoint,
+                    () => $"CancellableServerTaskMultiClientTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -86,7 +100,10 @@ namespace ThePlague.Networking.Tests
                 .BuildMultiClient(cts.Token);
 
             ClientFactory clientFactory = new ClientBuilder(this.ServiceProvider)
-                .UseSocket()
+                .UseBlockingSendSocket
+                (
+                    () => $"CancellableServerTaskMultiClientTest_client_{clientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -139,8 +156,15 @@ namespace ThePlague.Networking.Tests
             TaskCompletionSource[] clientContinue = new TaskCompletionSource[maxClient];
             int currentClientIndex = 0;
 
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket(endpoint)
+                .UseSocket
+                (
+                    endpoint,
+                    () => $"DisposableServerMultiClientTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -158,7 +182,10 @@ namespace ThePlague.Networking.Tests
                 .BuildServer();
 
             ClientFactory clientFactory = new ClientBuilder(this.ServiceProvider)
-                .UseSocket()
+                .UseBlockingSendSocket
+                (
+                    () => $"DisposableServerMultiClientTest_client_{clientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>

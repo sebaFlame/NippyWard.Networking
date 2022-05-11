@@ -5,13 +5,16 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 using System.IO.Pipelines;
 using Microsoft.Extensions.Logging;
-
 using OpenSSL.Core.SSL;
 using OpenSSL.Core.SSL.Buffer;
 using OpenSSL.Core.X509;
+
+using ThePlague.Networking.Connections;
 
 namespace ThePlague.Networking.Tls
 {
@@ -36,6 +39,7 @@ namespace ThePlague.Networking.Tls
         internal readonly TlsPipeReader TlsPipeReader;
         internal readonly TlsPipeWriter TlsPipeWriter;
 
+        private readonly string _connectionId;
         private readonly ILogger _logger;
         private readonly PipeReader _innerReader;
         private readonly PipeWriter _innerWriter;
@@ -56,12 +60,15 @@ namespace ThePlague.Networking.Tls
 
         public TlsPipe        
         (
+            string connectionId,
             PipeReader innerReader,
             PipeWriter innerWriter,
             ILogger logger,
             MemoryPool<byte> pool = null
         )
         {
+            this._connectionId = connectionId;
+
             this._decryptedReadBuffer = new TlsBuffer(pool);
             this._unencryptedWriteBuffer = new TlsBuffer(pool);
 
@@ -76,7 +83,7 @@ namespace ThePlague.Networking.Tls
         }
 
         #region authentication
-        private static async Task Authenticate
+        private async Task Authenticate
         (
             Ssl ssl,
             PipeReader pipeReader,
@@ -90,6 +97,8 @@ namespace ThePlague.Networking.Tls
             FlushResult flushResult;
             ReadOnlySequence<byte> buffer;
             SequencePosition read;
+
+            this.TraceLog($"authenticating TLS as {(ssl.IsServer ? "server" : "client")}");
 
             while (sslState.WantsRead()
                 || sslState.WantsWrite()
@@ -110,13 +119,19 @@ namespace ThePlague.Networking.Tls
                     //flush to the other side
                     flushResult = await pipeWriter.FlushAsync(cancellationToken);
 
-                    if (flushResult.IsCompleted)
+                    if (flushResult.IsCanceled)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+                    else if (flushResult.IsCompleted)
                     {
                         //if handshake not completed, throw exception
-                        if(!ssl.DoHandshake(out _))
+                        if (!ssl.DoHandshake(out sslState))
                         {
                             ThrowPipeCompleted();
                         }
+
+                        this.TraceLog($"pipe writer completed during handshake with state {sslState}");
 
                         //user data might have been received, leave further processing to consumer
                         break;
@@ -143,19 +158,27 @@ namespace ThePlague.Networking.Tls
 
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    if (readResult.IsCompleted)
+                    if (readResult.IsCanceled)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+                    else if (readResult.IsCompleted)
                     {
                         //if handshake not completed, throw exception
-                        if (!ssl.DoHandshake(out _))
+                        if (!ssl.DoHandshake(out sslState))
                         {
                             ThrowPipeCompleted();
                         }
+
+                        this.TraceLog($"pipe reader completed during handshake with state {sslState}");
 
                         //user data might have been received, leave further processing to consumer
                         break;
                     }
                 }
             }
+
+            this.TraceLog("authenticated TLS");
         }
         #endregion
 
@@ -176,14 +199,23 @@ namespace ThePlague.Networking.Tls
         {
             if (this._decryptedReadBuffer.Length > 0)
             {
-                return this.ReturnReadResult(cancellationToken);
+                this.TraceLog("buffered read available");
+
+                //get the decrypted buffer
+                CreateReadResultFromTlsBuffer
+                (
+                    this._decryptedReadBuffer,
+                    out ReadResult tlsResult
+                );
+
+                return new ValueTask<ReadResult>(tlsResult);
             }
 
             ReadResult readResult;
             ValueTask<ReadResult> readResultTask = this._innerReader.ReadAsync(cancellationToken);
             if (!readResultTask.IsCompletedSuccessfully)
             {
-                return this.ReadAsyncInternal(readResultTask, cancellationToken);
+                return this.AwaitInnerReadAsync(readResultTask, cancellationToken);
             }
 
             readResult = readResultTask.Result;
@@ -191,11 +223,11 @@ namespace ThePlague.Networking.Tls
             return this.ProcessReadResult(in readResult, cancellationToken);
         }
 
-        private async ValueTask<ReadResult> ReadAsyncInternal(ValueTask<ReadResult> readResultTask, CancellationToken cancellationToken)
+        private async ValueTask<ReadResult> AwaitInnerReadAsync(ValueTask<ReadResult> readResultTask, CancellationToken cancellationToken)
         {
-            ReadResult readResult = await readResultTask.ConfigureAwait(false);
+            ReadResult readResult = await readResultTask;
 
-            cancellationToken.ThrowIfCancellationRequested();
+            this.TraceLog("async read");
 
             return await this.ProcessReadResult(in readResult, cancellationToken);
         }
@@ -222,22 +254,18 @@ namespace ThePlague.Networking.Tls
             ReadResult tlsResult;
             SslState sslState = this.ProcessReadResult(in readResult);
 
-            if(!(readResult.IsCompleted
+            if (!(readResult.IsCompleted
                 || readResult.IsCanceled))
             {
-                if (sslState.IsShutdown())
-                {
-                    ThrowTlsShutdown();
-                }
-
                 if (sslState.WantsWrite())
                 {
+                    this.TraceLog("write during read requested");
                     return this.WriteDuringReadAsync<ReadResult>(this.ReturnReadResult, cancellationToken);
                 }
 
                 if (sslState.WantsRead())
                 {
-                    //should not happen
+                    this.TraceLog("read during read requested");
                     return this.ReadAsync(cancellationToken);
                 }
             }
@@ -257,6 +285,8 @@ namespace ThePlague.Networking.Tls
         {
             if (sslState.HandshakeCompleted())
             {
+                this.TraceLog("handshake completed (authenticate/renegotiate)");
+
                 this._renegotiateWaiter?.SetResult(true);
                 this._renegotiateWaiter = null;
             }
@@ -285,6 +315,13 @@ namespace ThePlague.Networking.Tls
                     this._decryptedReadBuffer,
                     out read
                 );
+
+                if (sslState.IsShutdown())
+                {
+                    this.TraceLog("shutdown during read requested");
+
+                    ThrowTlsShutdown();
+                }
             }
             catch(Exception ex)
             {
@@ -356,24 +393,16 @@ namespace ThePlague.Networking.Tls
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            TaskCompletionSource tcs = new TaskCompletionSource();
-            Task t;
-
-            //spin untill thread wins race
-            while ((t = Interlocked.CompareExchange(ref this._writeAwaiter, tcs.Task, null)) != null)
-            {
-                //this is a bad idea!
-                Thread.SpinWait(1);
-            }
-
-            cancellationToken.ThrowIfCancellationRequested();
+            TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
             //do a zero length write
             try
             {
-                flushTask = this.ProcessWrite
+                flushTask = this.FlushAsyncCore
                 (
                     in ReadOnlySequence<byte>.Empty,
+                    false,
+                    tcs.Task,
                     cancellationToken
                 );
             }
@@ -397,6 +426,8 @@ namespace ThePlague.Networking.Tls
             try
             {
                 flushResult = flushTask.Result;
+
+                this.TraceLog("sync flush");
 
                 //as these can come from read/renegotiate, throw an exception to bubble to caller
                 if (flushResult.IsCompleted)
@@ -429,6 +460,8 @@ namespace ThePlague.Networking.Tls
             {
                 FlushResult flushResult = await flushTask;
 
+                this.TraceLog("async flush");
+
                 //as these can come from read/renegotiate, throw an exception to bubble to caller
                 if (flushResult.IsCompleted)
                 {
@@ -450,6 +483,12 @@ namespace ThePlague.Networking.Tls
         #endregion
 
         #region writing
+        internal bool CanGetUnflushedBytes
+            => this._innerWriter.CanGetUnflushedBytes;
+
+        public long UnflushedBytes
+            => this._innerWriter.UnflushedBytes;
+
         internal void Advance(int bytes)
             => this._unencryptedWriteBuffer.Advance(bytes);
 
@@ -467,138 +506,334 @@ namespace ThePlague.Networking.Tls
 
         internal ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
         {
-            if(this._unencryptedWriteBuffer.Length == 0)
+            if (this._unencryptedWriteBuffer.Length == 0)
             {
+                this.TraceLog("no data to be flushed");
+
                 return default;
             }
 
-            Task writing = _WriteCompletedTask;
-            Task writeAwaitable = Interlocked.Exchange(ref this._writeAwaiter, writing);
+            this._unencryptedWriteBuffer.CreateReadOnlySequence(out ReadOnlySequence<byte> flushedBuffer);
+            return this.FlushAsyncCore
+            (
+                flushedBuffer,
+                true,
+                _WriteCompletedTask,
+                cancellationToken
+            );
+        }
 
-            //either already writing
-            //or a write during read/renegotiate has been initiated
-            if (writeAwaitable is not null)
+        private ValueTask<FlushResult> FlushAsyncCore
+        (
+            in ReadOnlySequence<byte> buffer,
+            bool retryBuffer,
+            Task replaceTask,
+            CancellationToken cancellationToken
+        )
+        {
+            Task writeAwaitable;
+            ValueTask<FlushResult> flushTask;
+            SequencePosition readPosition;
+#if TRACE
+            int count = 0;
+#endif
+
+            do
             {
-                if (object.ReferenceEquals(writeAwaitable, writing))
+                //spin until thread wins race
+                while ((writeAwaitable = Interlocked.CompareExchange(ref this._writeAwaiter, replaceTask, null)) != null)
                 {
-                    throw new NotSupportedException("Only 1 flush at at time is allowed");
+                    //write awaitable found from regular flush
+                    //and ignore out of band ones
+                    if(object.ReferenceEquals(replaceTask, _WriteCompletedTask)
+                        && !object.ReferenceEquals(writeAwaitable, _WriteCompletedTask))
+                    {
+                        break;
+                    }
+
+                    //this is a bad idea!
+                    Thread.SpinWait(1);
+#if TRACE
+                    count++;
+#endif
                 }
 
-                return this.AwaitTaskAndRetryFlushAsync(writeAwaitable, cancellationToken);
-            }
-            //happy path :)
-            else
-            {
-                this._unencryptedWriteBuffer.CreateReadOnlySequence(out ReadOnlySequence<byte> flushedBuffer);
-                return this.ProcessWrite(in flushedBuffer, cancellationToken);
-            }   
+                this.TraceLog($"spun for {count} cycles");
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                //a write during read/renegotiate has been initiated
+                if (writeAwaitable is not null)
+                {
+                    return this.AwaitTaskAndRetryFlushAsync
+                    (
+                        writeAwaitable,
+                        buffer,
+                        retryBuffer,
+                        cancellationToken
+                    );
+                }
+                //happy path :)
+                else
+                {
+                    try
+                    {
+                        if (this.ProcessWrite
+                        (
+                            in buffer,
+                            cancellationToken,
+                            out readPosition,
+                            out flushTask
+                        ))
+                        {
+                            //ssl write succeeded
+
+                            //writer gets freed in ProcessFlushResult
+                            break;
+                        }
+                        else
+                        {
+                            //ssl write did not succeed
+
+                            //ensure writer is freed
+                            _ = Interlocked.Exchange(ref this._writeAwaiter, null);
+
+                            //give other threads a chance to win the race
+                            Thread.Sleep(1);
+                        }
+                    }
+                    catch
+                    {
+                        //ensure writer is freed
+                        _ = Interlocked.Exchange(ref this._writeAwaiter, null);
+
+                        throw;
+                    }
+                }
+            } while (retryBuffer);
+
+            return this.ProcessFlushResult
+            (
+                in buffer,
+                in readPosition,
+                flushTask,
+                retryBuffer,
+                cancellationToken
+            );
         }
 
         //await task and retry write
         //state has already changed to writing at this stage!
-        internal async ValueTask<FlushResult> AwaitTaskAndRetryFlushAsync(Task awaitableTask, CancellationToken cancellationToken = default)
+        private async ValueTask<FlushResult> AwaitTaskAndRetryFlushAsync
+        (
+            Task awaitableTask,
+            ReadOnlySequence<byte> buffer,
+            bool retryBuffer,
+            CancellationToken cancellationToken
+        )
         {
-            await awaitableTask.ConfigureAwait(false);
+            this.TraceLog("awaiting out of band write");
+
+            //this awaitable should free _writeAwaiter
+            await awaitableTask;
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            this._unencryptedWriteBuffer.CreateReadOnlySequence(out ReadOnlySequence<byte> flushedBuffer);
-            return await this.ProcessWrite(in flushedBuffer, cancellationToken);
+            //the awaitableTask should have changed state back to null
+            //or another thread has taken it
+            //retry taking _writeAwaiter
+            return await this.FlushAsyncCore
+            (
+                buffer,
+                retryBuffer,
+                _WriteCompletedTask,
+                cancellationToken
+            );
         }
 
-        private ValueTask<FlushResult> ProcessWrite(in ReadOnlySequence<byte> buffer, CancellationToken cancellationToken)
+        //TODO: refactor to not pass a ReadOnlySequence<byte>
+        //this buffer can come from anywhere, while _unencryptedWriteBuffer gets advanced
+        private bool ProcessWrite
+        (
+            in ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken,
+            out SequencePosition readPosition,
+            out ValueTask<FlushResult> flushTask
+        )
         {
             SslState sslState;
-            SequencePosition read;
-            ValueTask<FlushResult> flushTask;
+            PipeWriter pipeWriter = this._innerWriter;
 
             try
             {
                 sslState = this._ssl.WriteSsl
                 (
                     buffer,
-                    this._innerWriter,
-                    out read
+                    pipeWriter,
+                    out readPosition
                 );
-
-                if (!buffer.IsEmpty)
-                {
-                    //advance write reader
-                    this._unencryptedWriteBuffer.AdvanceReader(read, buffer.End);
-                }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (sslState.WantsWrite())
+                if (sslState.IsShutdown())
                 {
-                    //should not happen!
-                    return this.ProcessWrite(ReadOnlySequence<byte>.Empty, cancellationToken);
+                    this.TraceLog("shutdown during write requested");
+
+                    ThrowTlsShutdown();
                 }
 
-                flushTask = this._innerWriter.FlushAsync(cancellationToken);
+                this.ProcessRenegotiate(in sslState);
+
+                if (sslState.WantsWrite())
+                {
+                    throw new InvalidOperationException("write requested during write");
+                }
+
+                if (sslState.WantsRead())
+                {
+                    this.TraceLog("read during write requested");
+                }
+
+                //nothing has been written to PipeWriter (IBufferWriter)
+                if (pipeWriter.UnflushedBytes == 0)
+                {
+                    //this write could come from read/renegotiate
+                    //and hasn't won the race
+                    //return true to prevent deadlock on read
+                    if (buffer.IsEmpty)
+                    {
+                        this.TraceLog($"0 unflushed bytes on empty buffer, skip flush ({sslState})");
+                        flushTask = default;
+                        return true;
+                    }
+                    //else other write thread has won race and awaits a read (or other operation)
+                    //when the write won the race it would've gotten non-application bytes from WriteSsl
+                    //these get prioritized, and an operation (read) is awaited on
+                    //the buffer gets completely ignored, until the wanted read (or other operation) gets statisfied
+                    else
+                    {
+                        this.TraceLog($"0 unflushed bytes on filled buffer, retry flush ({sslState}) @ {(readPosition.Equals(buffer.Start) ? "start" : "not start")}");
+                        flushTask = default;
+                        return false;
+                    }
+                }
+
+                //only advance when a read has occured
+                if (!buffer.IsEmpty)
+                {
+                    //advance write reader
+                    this._unencryptedWriteBuffer.AdvanceReader(readPosition, buffer.End);
+                }
+
+                flushTask = pipeWriter.FlushAsync(cancellationToken);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 //ensure current renegotiation finishes
                 this.ProcessRenegotiate(ex);
-
-                //ensure writer is freed
-                _ = Interlocked.Exchange(ref this._writeAwaiter, null);
 
                 //rethrow
                 throw;
             }
 
+            return true;
+        }
+
+        private ValueTask<FlushResult> ProcessFlushResult
+        (
+            in ReadOnlySequence<byte> buffer,
+            in SequencePosition readPosition,
+            ValueTask<FlushResult> flushTask,
+            bool retryBuffer,
+            CancellationToken cancellationToken
+        )
+        {
+            bool bufferFlushed = buffer.IsEmpty
+                || buffer.End.Equals(readPosition);
+
             if (!flushTask.IsCompletedSuccessfully)
             {
-                return this.ProcessInnerFlushAsync(flushTask, sslState);
+                return this.AwaitInnerFlushAsync
+                (
+                    flushTask,
+                    bufferFlushed,
+                    retryBuffer,
+                    buffer,
+                    cancellationToken
+                );
             }
 
             try
             {
-                this.ProcessRenegotiate(in sslState);
+                //get result to get possible exception
+                this.TraceLog("sync flush");
 
-                if (sslState.IsShutdown())
+                if (bufferFlushed
+                    || !retryBuffer)
                 {
-                    ThrowTlsShutdown();
+                    return flushTask;
                 }
-
-                return new ValueTask<FlushResult>(flushTask.Result);
             }
             finally
             {
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
             }
+
+            return this.FlushAsyncCore
+            (
+                buffer,
+                retryBuffer,
+                _WriteCompletedTask,
+                cancellationToken
+            );
         }
 
-        private async ValueTask<FlushResult> ProcessInnerFlushAsync(ValueTask<FlushResult> flushTask, SslState sslState)
+        private async ValueTask<FlushResult> AwaitInnerFlushAsync
+        (
+            ValueTask<FlushResult> flushTask,
+            bool bufferFlushed,
+            bool retryBuffer,
+            ReadOnlySequence<byte> buffer,
+            CancellationToken cancellationToken
+        )
         {
             try
             {
-                //prioritize flush
                 FlushResult flushResult = await flushTask;
+                this.TraceLog("async flush");
 
-                this.ProcessRenegotiate(in sslState);
-
-                if (sslState.IsShutdown())
+                if (bufferFlushed
+                    || !retryBuffer)
                 {
-                    ThrowTlsShutdown();
+                    return flushResult;
                 }
-
-                return flushResult;
             }
             finally
             {
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
             }
+
+            return await this.FlushAsyncCore
+            (
+                buffer,
+                retryBuffer,
+                _WriteCompletedTask,
+                cancellationToken
+            );
         }
         #endregion
 
         #region renegotiate
+        /// <summary>
+        /// Initialize and complete a SSL/TLS renegotatiate.
+        /// Ensure you're always reading.
+        /// </summary>
         public ValueTask<bool> RenegotiateAsync(CancellationToken cancellationToken = default)
         {
             SslState sslState;
             this._renegotiateWaiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            this.TraceLog("renegotiating");
 
             try
             {
@@ -610,8 +845,9 @@ namespace ThePlague.Networking.Tls
                 throw;
             }
 
+            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter.Task);
             ValueTask<bool> ReturnRenegotiateTask(CancellationToken cancellationToken)
-                => new ValueTask<bool>(this._renegotiateWaiter.Task);
+                => renegotiateTask;
 
             //can happen during TLS1.3 "renegotiate"
             if(sslState.HandshakeCompleted())
@@ -621,11 +857,13 @@ namespace ThePlague.Networking.Tls
 
             if (sslState.WantsWrite())
             {
+                this.TraceLog("write during renegotiate requested");
                 return this.WriteDuringReadAsync(ReturnRenegotiateTask, cancellationToken);
             }
-            else if (sslState.WantsRead())
+
+            if (sslState.WantsRead())
             {
-                //always reading
+                this.TraceLog("read during renegotiate requested");
             }
 
             return new ValueTask<bool>(this._renegotiateWaiter.Task);
@@ -637,6 +875,14 @@ namespace ThePlague.Networking.Tls
 
         private static void ThrowTlsShutdown()
             => throw new TlsShutdownException();
+
+        [Conditional("TRACE")]
+        private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
+        {
+#if TRACE
+            this._logger?.TraceLog(this._connectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+#endif
+        }
 
         public void Dispose()
         {

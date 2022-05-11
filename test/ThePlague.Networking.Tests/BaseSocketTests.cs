@@ -21,7 +21,7 @@ using ThePlague.Networking.Transports.Sockets;
 
 namespace ThePlague.Networking.Tests
 {
-    public abstract class BaseSocketTests : IClassFixture<ServicesState>
+    public abstract class BaseSocketTests
     {
         public static IEnumerable<object[]> GetEndPoints() => new object[][]
         {
@@ -99,11 +99,12 @@ namespace ThePlague.Networking.Tests
         (
             IServiceProvider serviceProvider,
             EndPoint endpoint,
-            TaskCompletionSource serverTcs
+            TaskCompletionSource serverTcs,
+            Func<string> createName
         )
         {
             return new ServerBuilder(serviceProvider)
-                .UseSocket(endpoint)
+                .UseBlockingSendSocket(endpoint, createName)
                 .ConfigureConnection
                 (
                     (c) =>
@@ -122,11 +123,12 @@ namespace ThePlague.Networking.Tests
         internal static ClientBuilder CreateClientBuilder
         (
             IServiceProvider serviceProvider,
-            TaskCompletionSource clientTcs
+            TaskCompletionSource clientTcs,
+            Func<string> createName
         )
         {
             return new ClientBuilder(serviceProvider)
-                .UseSocket()
+                .UseBlockingSendSocket(createName)
                 .ConfigureConnection
                 (
                     (c) =>
