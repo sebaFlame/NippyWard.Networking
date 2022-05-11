@@ -543,12 +543,28 @@ namespace ThePlague.Networking.Tls
                 //spin until thread wins race
                 while ((writeAwaitable = Interlocked.CompareExchange(ref this._writeAwaiter, replaceTask, null)) != null)
                 {
-                    //write awaitable found from regular flush
-                    //and ignore out of band ones
-                    if(object.ReferenceEquals(replaceTask, _WriteCompletedTask)
-                        && !object.ReferenceEquals(writeAwaitable, _WriteCompletedTask))
+                    //regular flush
+                    if(object.ReferenceEquals(replaceTask, _WriteCompletedTask))
                     {
-                        break;
+                        //double flush detected
+                        if(object.ReferenceEquals(writeAwaitable, _WriteCompletedTask))
+                        {
+                            throw new InvalidOperationException("Only 1 flush at a time allowed");
+                        }
+                        //awaitable found, use it
+                        else
+                        {
+                            break;
+                        }
+                    }
+                    //out of band write
+                    else
+                    {
+                        //double out of band write - ignore
+                        if (!object.ReferenceEquals(writeAwaitable, _WriteCompletedTask))
+                        {
+                            return default;
+                        }
                     }
 
                     //this is a bad idea!
@@ -634,7 +650,7 @@ namespace ThePlague.Networking.Tls
         {
             this.TraceLog("awaiting out of band write");
 
-            //this awaitable should free _writeAwaiter
+            //this awaitable will free _writeAwaiter
             await awaitableTask;
 
             cancellationToken.ThrowIfCancellationRequested();
