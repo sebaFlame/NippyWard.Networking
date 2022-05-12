@@ -559,15 +559,6 @@ namespace ThePlague.Networking.Tls
                             break;
                         }
                     }
-                    //out of band write
-                    else
-                    {
-                        //double out of band write - ignore
-                        if (!object.ReferenceEquals(writeAwaitable, _WriteCompletedTask))
-                        {
-                            return default;
-                        }
-                    }
 
                     cancellationToken.ThrowIfCancellationRequested();
 
