@@ -65,6 +65,17 @@ namespace ThePlague.Networking.Connections
             return this;
         }
 
+        /// <summary>
+        /// Seconds to wait for connections to close.
+        /// Force close after this timeout.
+        /// </summary>
+        /// <param name="timeoutInSeconds">Timeout in seconds</param>
+        public ServerBuilder AddTimeout(uint timeoutInSeconds)
+        {
+            this._serverContext.TimeOut = timeoutInSeconds;
+            return this;
+        }
+
         private Task BuildListenTask(CancellationToken shutdownCancellation = default)
             => this.BuildServer().RunAsync(shutdownCancellation);
 
@@ -90,9 +101,9 @@ namespace ThePlague.Networking.Connections
         /// <summary>
         /// Builds a <see cref="Task"/> representing a server listening to multiple incoming connections per <see cref="ServerContext.Bindings"/>.
         /// </summary>
-        /// <param name="shutdownCancellation">A <see cref="CancellationToken"/> by which the server can be closed</param>
+        /// <param name="shutdownCancellation">A <see cref="CancellationToken"/> by which the server can be shutdown, this is not optional!!!</param>
         /// <returns>A task representing the listening to multiple <see cref="ConnectionContext"/></returns>
-        public Task BuildMultiClient(CancellationToken shutdownCancellation = default)
+        public Task BuildMultiClient(CancellationToken shutdownCancellation)
         {
             this.ConfigureSingleConnection(false);
             return this.Build(shutdownCancellation);
@@ -101,7 +112,7 @@ namespace ThePlague.Networking.Connections
         /// <summary>
         /// Builds a <see cref="Task"/> representing a server listening to single incoming connection per <see cref="ServerContext.Bindings"/>.
         /// </summary>
-        /// <param name="shutdownCancellation">A <see cref="CancellationToken"/> by which the server can be closed</param>
+        /// <param name="shutdownCancellation">An optional <see cref="CancellationToken"/> by which the server can be shutdown</param>
         /// <returns>A task representing the listening to single <see cref="ConnectionContext"/></returns>
         public Task BuildSingleClient(CancellationToken shutdownCancellation = default)
         {

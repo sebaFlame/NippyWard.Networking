@@ -23,6 +23,11 @@ namespace ThePlague.Networking.Connections
         /// </summary>
         public bool AcceptSingleConnection { get; set; }
 
+        /// <summary>
+        /// Seconds to wait for connections to "gracefully" close
+        /// </summary>
+        public uint TimeOut { get; set; }
+
         public ServerContext()
         {
             this.Bindings = new Dictionary<EndPoint, IConnectionListenerFactory>();

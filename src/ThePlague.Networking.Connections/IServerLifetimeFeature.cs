@@ -10,6 +10,6 @@ namespace ThePlague.Networking.Connections
     {
         CancellationToken ServerShutdown { get; set; }
 
-        void Shutdown();
+        void Shutdown(uint timeoutInSeconds);
     }
 }

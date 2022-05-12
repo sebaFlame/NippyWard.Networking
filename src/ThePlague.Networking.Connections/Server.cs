@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -16,12 +17,25 @@ namespace ThePlague.Networking.Connections
     public class Server : IHostedService, IServerLifetimeFeature, IDisposable, IAsyncDisposable
     {
         public CancellationToken ServerShutdown { get; set; }
+        public Task Connections
+        {
+            get
+            {
+                if(this._connections.IsEmpty)
+                {
+                    return Task.CompletedTask;
+                }
+
+                return Task.WhenAll(this._connections.Values);
+            }
+        }
 
         private ServerContext _serverContext;
         private CancellationTokenSource _cts;
         private Task _listenTask;
         private ConnectionDelegate _connectionDelegate;
         private ILogger _logger;
+        ConcurrentDictionary<ulong, Task> _connections;
 
         public Server
         (
@@ -36,6 +50,7 @@ namespace ThePlague.Networking.Connections
 
             this._cts = new CancellationTokenSource();
             this.ServerShutdown = this._cts.Token;
+            this._connections = new ConcurrentDictionary<ulong, Task>();
         }
 
         ~Server()
@@ -69,7 +84,7 @@ namespace ThePlague.Networking.Connections
             IConnectionListener connectionListener;
 
             Task[] listenTasks = new Task[this._serverContext.Bindings.Count];
-            int index = 0;
+            byte index = 0;
 
             foreach (KeyValuePair<EndPoint, IConnectionListenerFactory> kv in this._serverContext.Bindings)
             {
@@ -78,12 +93,26 @@ namespace ThePlague.Networking.Connections
 
                 if(this._serverContext.AcceptSingleConnection)
                 {
-                    listenTasks[index++] = this.ListenSingleConnectionAsync(connectionListener, cancellationToken);
+                    listenTasks[index] = this.ListenSingleConnectionAsync
+                    (
+                        connectionListener,
+                        index,
+                        this._connections,
+                        cancellationToken
+                    );
                 }
                 else
                 {
-                    listenTasks[index++] = this.ListenMultipleConnectionAsync(connectionListener, cancellationToken);
+                    listenTasks[index] = this.ListenMultipleConnectionAsync
+                    (
+                        connectionListener,
+                        index,
+                        this._connections,
+                        cancellationToken
+                    );
                 }
+
+                index++;
             }
 
             await Task.WhenAll(listenTasks);
@@ -97,21 +126,24 @@ namespace ThePlague.Networking.Connections
         /// <returns>The finishing execution</returns>
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
-            this.Shutdown();
+            this.Shutdown(this._serverContext.TimeOut);
 
             await this._listenTask;
         }
 
-        private async Task ListenConnectionsAsync
+        //max 256 listeners!!!
+        private async Task<ulong> ListenConnectionsAsync
         (
+            byte listenerIndex,
             bool listenMultiple,
             IConnectionListener connectionListener,
+            IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
         )
         {
             ValueTask<ConnectionContext> connectionTask;
             ConnectionContext connectionContext;
-            Task executionTask;
+            ulong connectionCount = 0, connectionId;
 
             try
             {
@@ -130,22 +162,32 @@ namespace ThePlague.Networking.Connections
 
                     cancellationToken.ThrowIfCancellationRequested();
 
+                    this._logger.LogTrace("[Server] accepted connections");
+
                     connectionContext.Features.Set<IServerLifetimeFeature>(this);
 
+                    //generate a connectionId
+                    connectionId = ((ulong)listenerIndex) | (++connectionCount) << 8;
+
                     //execute client on threadpool
-                    executionTask = ExecuteConnectionContext
+                    connections.Add
                     (
-                        connectionContext,
-                        this._connectionDelegate,
-                        this._logger,
-                        cancellationToken
+                        connectionId,
+                        ExecuteConnectionContext
+                        (
+                            connectionId,
+                            connectionContext,
+                            this._connectionDelegate,
+                            this._logger,
+                            connections,
+                            cancellationToken
+                        )
                     );
                 } while (listenMultiple);
 
-                if (!listenMultiple)
-                {
-                    await executionTask;
-                }
+                //only single connection, await it
+                this._logger.LogTrace("[Server] awaiting single connection");
+                await this.Connections;
             }
             catch (OperationCanceledException ex)
             {
@@ -153,38 +195,57 @@ namespace ThePlague.Networking.Connections
                 {
                     throw;
                 }
+
+                //shutdown has been called, await clients (if any)
+                this._logger.LogTrace("[Server] awaiting connections after shutdown");
+                await this.Connections;
+            }
+            catch (Exception ex)
+            {
+                this._logger.LogError(ex, "[Server] Unexpected exception from server");
+                throw;
             }
             finally
             {
+                this._logger.LogTrace($"[Server] unbinding listener {listenerIndex}");
                 await connectionListener.UnbindAsync(cancellationToken);
             }
+
+            return connectionCount;
         }
 
         internal Task ListenMultipleConnectionAsync
         (
             IConnectionListener connectionListener,
+            byte index,
+            IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
         )
-            => this.ListenConnectionsAsync(true, connectionListener, cancellationToken);
+            => this.ListenConnectionsAsync(index, true, connectionListener, connections, cancellationToken);
 
         internal Task ListenSingleConnectionAsync
         (
             IConnectionListener connectionListener,
+            byte index,
+            IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
         )
-            => this.ListenConnectionsAsync(false, connectionListener, cancellationToken);
+            => this.ListenConnectionsAsync(index, false, connectionListener, connections, cancellationToken);
 
         private static async Task ExecuteConnectionContext
         (
+            ulong connectionId,
             ConnectionContext connectionContext,
             ConnectionDelegate connectionDelegate,
             ILogger logger,
+            IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
         )
         {
             CancellationTokenRegistration reg = default;
 
             //ensure no exception from the delegate gets thrown before any other awaitable
+            //ensures add to connections collection
             await Task.Yield();
 
             reg = cancellationToken.Register((c) => ConnectionContextShutdown((ConnectionContext)c), connectionContext, false);
@@ -213,6 +274,8 @@ namespace ThePlague.Networking.Connections
                 reg.Dispose();
 
                 await connectionContext.DisposeAsync();
+
+                connections.Remove(connectionId);
             }
         }
 
@@ -233,9 +296,18 @@ namespace ThePlague.Networking.Connections
             }
         }
 
-        public void Shutdown()
+        //TODO: try connectionLifetimeNotificationFeature.RequestClose() first
+        public void Shutdown(uint timeoutInSeconds = 0)
         {
-            this._cts?.Cancel();
+            if(timeoutInSeconds > 0)
+            {
+                this._cts?.CancelAfter((int)timeoutInSeconds * 1000);
+            }
+            else
+            {
+                this._cts?.Cancel();
+            }
+            
             this._cts = null;
         }
 

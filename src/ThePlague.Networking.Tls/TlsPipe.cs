@@ -567,6 +567,8 @@ namespace ThePlague.Networking.Tls
                         }
                     }
 
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     //this is a bad idea!
                     Thread.SpinWait(1);
 #if TRACE
@@ -730,6 +732,14 @@ namespace ThePlague.Networking.Tls
                     {
                         this.TraceLog($"0 unflushed bytes on filled buffer, retry flush ({sslState}) @ {(readPosition.Equals(buffer.Start) ? "start" : "not start")}");
                         flushTask = default;
+
+                        //might have been a partial ssl write (to guarantee 16k payload) which hasn't been flushed yet
+                        if (!buffer.Start.Equals(readPosition))
+                        {
+                            this._unencryptedWriteBuffer.AdvanceReader(readPosition);
+                            return true;
+                        }
+
                         return false;
                     }
                 }
@@ -903,6 +913,8 @@ namespace ThePlague.Networking.Tls
         public void Dispose()
         {
             this._ssl.Dispose();
+
+            Interlocked.Exchange(ref this._writeAwaiter, null);
         }
     }
 }

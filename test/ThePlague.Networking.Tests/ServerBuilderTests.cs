@@ -71,7 +71,6 @@ namespace ThePlague.Networking.Tests
             CancellationTokenSource cts = new CancellationTokenSource();
             int currentClientCount = 0;
             Task[] clients = new Task[maxClient];
-            TaskCompletionSource[] clientContinue = new TaskCompletionSource[maxClient];
             int currentClientIndex = 0;
 
             int serverClientIndex = 0;
@@ -89,11 +88,15 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            (ConnectionContext ctx) =>
+                            async (ConnectionContext ctx) =>
                             {
                                 int index = Interlocked.Increment(ref currentClientCount);
-                                clientContinue[--index].SetResult();
-                                return Task.CompletedTask;
+
+                                //close connection
+                                ctx.Transport.Output.Complete();
+
+                                //await confirmation
+                                await ctx.Transport.Input.ReadAsync();
                             }
                         )
                 )
@@ -110,19 +113,20 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            (ConnectionContext ctx) =>
+                            async (ConnectionContext ctx) =>
                             {
                                 int index = Interlocked.Increment(ref currentClientIndex);
-                                return clientContinue[--index].Task;
+
+                                //await connection close
+                                await ctx.Transport.Input.ReadAsync();
+
+                                //confirm close
+                                ctx.Transport.Output.Complete();
                             }
                         )
                 )
                 .BuildClientFactory();
 
-            for (int i = 0; i < maxClient; i++)
-            {
-                clientContinue[i] = new TaskCompletionSource();
-            }
 
             for (int i = 0; i < maxClient; i++)
             {
@@ -132,14 +136,18 @@ namespace ThePlague.Networking.Tests
             //await all clients (doing nothing)
             await Task.WhenAll(clients);
 
-            //check if all clients have connected
-            Assert.Equal(maxClient, currentClientCount);
+            //check if all clients connected
+            Assert.Equal(maxClient, currentClientIndex);
 
-            //shutdown the server
-            cts.Cancel();
+            //shutdown the server with a timeout to allow connections to gracefully close
+            //as there is no way to await the clients when using a server as Task only
+            cts.CancelAfter(1000);
 
             //await the server
             await serverTask;
+
+            //check if all clients have connected to server
+            Assert.Equal(maxClient, currentClientCount);
 
             //ceck if the server shut down cleanly
             Assert.True(serverTask.IsCompletedSuccessfully);
@@ -152,9 +160,8 @@ namespace ThePlague.Networking.Tests
             int maxClient = 10;
             CancellationTokenSource cts = new CancellationTokenSource();
             int currentClientCount = 0;
-            Task[] clients = new Task[maxClient];
-            TaskCompletionSource[] clientContinue = new TaskCompletionSource[maxClient];
             int currentClientIndex = 0;
+            Task[] clients = new Task[maxClient];
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -171,11 +178,15 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            (ConnectionContext ctx) =>
+                            async (ConnectionContext ctx) =>
                             {
                                 int index = Interlocked.Increment(ref currentClientCount);
-                                clientContinue[--index].SetResult();
-                                return Task.CompletedTask;
+
+                                //close connection
+                                ctx.Transport.Output.Complete();
+
+                                //await confirmation
+                                await ctx.Transport.Input.ReadAsync();
                             }
                         )
                 )
@@ -192,19 +203,19 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            (ConnectionContext ctx) =>
+                            async (ConnectionContext ctx) =>
                             {
                                 int index = Interlocked.Increment(ref currentClientIndex);
-                                return clientContinue[--index].Task;
+
+                                //await connection close
+                                await ctx.Transport.Input.ReadAsync();
+
+                                //confirm close
+                                ctx.Transport.Output.Complete();
                             }
                         )
                 )
                 .BuildClientFactory();
-
-            for (int i = 0; i < maxClient; i++)
-            {
-                clientContinue[i] = new TaskCompletionSource();
-            }
 
             //use IAsyncDisposable
             await using (server)
@@ -220,6 +231,12 @@ namespace ThePlague.Networking.Tests
                 await Task.WhenAll(clients);
 
                 //check if all clients have connected
+                Assert.Equal(maxClient, currentClientIndex);
+
+                //await all server connections
+                await server.Connections;
+
+                //check if all clients have connected to server
                 Assert.Equal(maxClient, currentClientCount);
             }
         }
