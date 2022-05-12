@@ -225,7 +225,7 @@ namespace ThePlague.Networking.Tls
 
         private async ValueTask<ReadResult> AwaitInnerReadAsync(ValueTask<ReadResult> readResultTask, CancellationToken cancellationToken)
         {
-            ReadResult readResult = await readResultTask;
+            ReadResult readResult = await readResultTask.ConfigureAwait(false);
 
             this.TraceLog("async read");
 
@@ -322,16 +322,18 @@ namespace ThePlague.Networking.Tls
 
                     ThrowTlsShutdown();
                 }
+
+                this.ProcessRenegotiate(in sslState);
+
+                this.TraceLog($"read {(buffer.End.Equals(read) ? "complete" : "incomplete")} buffer");
+
+                this._innerReader.AdvanceTo(read, buffer.End);
             }
             catch(Exception ex)
             {
                 this.ProcessRenegotiate(ex);
                 throw;
             }
-
-            this._innerReader.AdvanceTo(read, buffer.End);
-
-            this.ProcessRenegotiate(in sslState);
 
             return sslState;
         }
@@ -458,7 +460,7 @@ namespace ThePlague.Networking.Tls
         {
             try
             {
-                FlushResult flushResult = await flushTask;
+                FlushResult flushResult = await flushTask.ConfigureAwait(false);
 
                 this.TraceLog("async flush");
 
@@ -576,13 +578,14 @@ namespace ThePlague.Networking.Tls
 #endif
                 }
 
-                this.TraceLog($"spun for {count} cycles");
+                this.TraceLog($"buffer {buffer.Length} spun for {count} cycles");
 
                 cancellationToken.ThrowIfCancellationRequested();
 
                 //a write during read/renegotiate has been initiated
                 if (writeAwaitable is not null)
                 {
+                    this.TraceLog($"buffer {buffer.Length} awaitable received");
                     return this.AwaitTaskAndRetryFlushAsync
                     (
                         writeAwaitable,
@@ -605,6 +608,7 @@ namespace ThePlague.Networking.Tls
                         ))
                         {
                             //ssl write succeeded
+                            this.TraceLog($"buffer {buffer.Length} success");
 
                             //writer gets freed in ProcessFlushResult
                             break;
@@ -612,16 +616,20 @@ namespace ThePlague.Networking.Tls
                         else
                         {
                             //ssl write did not succeed
+                            this.TraceLog($"buffer {buffer.Length} failure");
 
                             //ensure writer is freed
                             _ = Interlocked.Exchange(ref this._writeAwaiter, null);
 
                             //give other threads a chance to win the race
+                            this.TraceLog($"buffer {buffer.Length} sleeping");
                             Thread.Sleep(1);
                         }
                     }
-                    catch
+                    catch(Exception ex)
                     {
+                        this.TraceLog($"buffer {buffer.Length} exception during flush: {ex}");
+
                         //ensure writer is freed
                         _ = Interlocked.Exchange(ref this._writeAwaiter, null);
 
@@ -630,6 +638,7 @@ namespace ThePlague.Networking.Tls
                 }
             } while (retryBuffer);
 
+            this.TraceLog($"buffer {buffer.Length} returning");
             return this.ProcessFlushResult
             (
                 in buffer,
@@ -653,7 +662,9 @@ namespace ThePlague.Networking.Tls
             this.TraceLog("awaiting out of band write");
 
             //this awaitable will free _writeAwaiter
-            await awaitableTask;
+            await awaitableTask.ConfigureAwait(false);
+
+            this.TraceLog("awaited out of band write");
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -736,6 +747,7 @@ namespace ThePlague.Networking.Tls
                         //might have been a partial ssl write (to guarantee 16k payload) which hasn't been flushed yet
                         if (!buffer.Start.Equals(readPosition))
                         {
+                            this.TraceLog("0 unflushed bytes on filled buffer, flush to ssl succeeded");
                             this._unencryptedWriteBuffer.AdvanceReader(readPosition);
                             return true;
                         }
@@ -825,7 +837,7 @@ namespace ThePlague.Networking.Tls
         {
             try
             {
-                FlushResult flushResult = await flushTask;
+                FlushResult flushResult = await flushTask.ConfigureAwait(false);
                 this.TraceLog("async flush");
 
                 if (bufferFlushed
@@ -858,6 +870,7 @@ namespace ThePlague.Networking.Tls
         {
             SslState sslState;
             this._renegotiateWaiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter.Task);
 
             this.TraceLog("renegotiating");
 
@@ -871,18 +884,14 @@ namespace ThePlague.Networking.Tls
                 throw;
             }
 
-            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter.Task);
-            ValueTask<bool> ReturnRenegotiateTask(CancellationToken cancellationToken)
-                => renegotiateTask;
-
             //can happen during TLS1.3 "renegotiate"
-            if(sslState.HandshakeCompleted())
-            {
-                this._renegotiateWaiter.SetResult(true);
-            }
+            this.ProcessRenegotiate(sslState);
 
             if (sslState.WantsWrite())
             {
+                ValueTask<bool> ReturnRenegotiateTask(CancellationToken cancellationToken)
+                    => renegotiateTask;
+
                 this.TraceLog("write during renegotiate requested");
                 return this.WriteDuringReadAsync(ReturnRenegotiateTask, cancellationToken);
             }

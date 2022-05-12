@@ -52,7 +52,7 @@ namespace ThePlague.Networking.Tests
                 .AddLogging(builder =>
                 {
                     builder.SetMinimumLevel(LogLevel.Trace);
-                    builder.AddDebug();
+                    //builder.AddDebug();
                     builder.AddProvider(new FileLoggerProvider(channel.Writer));
                 })
                 .BuildServiceProvider();
