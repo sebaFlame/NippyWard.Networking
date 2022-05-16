@@ -232,9 +232,10 @@ namespace ThePlague.Networking.Tls
             return await this.ProcessReadResult(in readResult, cancellationToken);
         }
 
-        private ValueTask<ReadResult> ReturnReadResult(CancellationToken cancellationToken)
+        private ValueTask<ReadResult> ReturnReadResult(bool bufferRead, CancellationToken cancellationToken)
         {
-            if (this._decryptedReadBuffer.Length == 0)
+            if (!bufferRead
+                || this._decryptedReadBuffer.Length == 0)
             {
                 return this.ReadAsync(cancellationToken);
             }
@@ -252,7 +253,14 @@ namespace ThePlague.Networking.Tls
         private ValueTask<ReadResult> ProcessReadResult(in ReadResult readResult, CancellationToken cancellationToken)
         {
             ReadResult tlsResult;
-            SslState sslState = this.ProcessReadResult(in readResult);
+            ReadOnlySequence<byte> buffer = readResult.Buffer;
+            SequencePosition readPosition;
+
+            SslState sslState = this.ProcessReadResult
+            (
+                in buffer,
+                out readPosition
+            );
 
             if (!(readResult.IsCompleted
                 || readResult.IsCanceled))
@@ -260,7 +268,13 @@ namespace ThePlague.Networking.Tls
                 if (sslState.WantsWrite())
                 {
                     this.TraceLog("write during read requested");
-                    return this.WriteDuringReadAsync<ReadResult>(this.ReturnReadResult, cancellationToken);
+                    return this.WriteDuringReadAsync<ReadResult>
+                    (
+                        this.ReturnReadResult,
+                        //retry read if buffer not read completely
+                        buffer.IsEmpty || buffer.End.Equals(readPosition),
+                        cancellationToken
+                    );
                 }
 
                 if (sslState.WantsRead())
@@ -298,12 +312,13 @@ namespace ThePlague.Networking.Tls
             this._renegotiateWaiter = null;
         }
 
-        private SslState ProcessReadResult(in ReadResult readResult)
+        private SslState ProcessReadResult
+        (
+            in ReadOnlySequence<byte> buffer,
+            out SequencePosition read
+        )
         {
-            ReadResult res = readResult;
-            ReadOnlySequence<byte> buffer = res.Buffer;
             SslState sslState;
-            SequencePosition read;
 
             try
             {
@@ -316,6 +331,8 @@ namespace ThePlague.Networking.Tls
                     out read
                 );
 
+                this.TraceLog("ReadSsl");
+
                 if (sslState.IsShutdown())
                 {
                     this.TraceLog("shutdown during read requested");
@@ -325,9 +342,11 @@ namespace ThePlague.Networking.Tls
 
                 this.ProcessRenegotiate(in sslState);
 
-                this.TraceLog($"read {(buffer.End.Equals(read) ? "complete" : "incomplete")} buffer");
-
-                this._innerReader.AdvanceTo(read, buffer.End);
+                if(!buffer.IsEmpty
+                    && !buffer.Start.Equals(read))
+                {
+                    this._innerReader.AdvanceTo(read);
+                }
             }
             catch(Exception ex)
             {
@@ -386,7 +405,8 @@ namespace ThePlague.Networking.Tls
 
         private ValueTask<T> WriteDuringReadAsync<T>
         (
-            Func<CancellationToken, ValueTask<T>> postWriteFunction,
+            Func<bool, CancellationToken, ValueTask<T>> postWriteFunction,
+            bool bufferRead,
             CancellationToken cancellationToken
         )
         {
@@ -403,7 +423,6 @@ namespace ThePlague.Networking.Tls
                 flushTask = this.FlushAsyncCore
                 (
                     in ReadOnlySequence<byte>.Empty,
-                    false,
                     tcs.Task,
                     cancellationToken
                 );
@@ -420,6 +439,7 @@ namespace ThePlague.Networking.Tls
                 (
                     flushTask,
                     tcs,
+                    bufferRead,
                     postWriteFunction,
                     cancellationToken
                 );
@@ -447,14 +467,15 @@ namespace ThePlague.Networking.Tls
                 tcs.SetResult();
             }
 
-            return postWriteFunction(cancellationToken);
+            return postWriteFunction(bufferRead, cancellationToken);
         }
 
         private async ValueTask<T> AwaitWriteDuringReadAsync<T>
         (
             ValueTask<FlushResult> flushTask,
             TaskCompletionSource tcs,
-            Func<CancellationToken, ValueTask<T>> postWriteFunction,
+            bool bufferRead,
+            Func<bool ,CancellationToken, ValueTask<T>> postWriteFunction,
             CancellationToken cancellationToken
         )
         {
@@ -480,7 +501,7 @@ namespace ThePlague.Networking.Tls
                 tcs.SetResult();
             }
 
-            return await postWriteFunction(cancellationToken);
+            return await postWriteFunction(bufferRead, cancellationToken);
         }
         #endregion
 
@@ -519,7 +540,6 @@ namespace ThePlague.Networking.Tls
             return this.FlushAsyncCore
             (
                 flushedBuffer,
-                true,
                 _WriteCompletedTask,
                 cancellationToken
             );
@@ -528,7 +548,6 @@ namespace ThePlague.Networking.Tls
         private ValueTask<FlushResult> FlushAsyncCore
         (
             in ReadOnlySequence<byte> buffer,
-            bool retryBuffer,
             Task replaceTask,
             CancellationToken cancellationToken
         )
@@ -580,8 +599,6 @@ namespace ThePlague.Networking.Tls
                     return this.AwaitTaskAndRetryFlushAsync
                     (
                         writeAwaitable,
-                        buffer,
-                        retryBuffer,
                         cancellationToken
                     );
                 }
@@ -627,15 +644,14 @@ namespace ThePlague.Networking.Tls
                         throw;
                     }
                 }
-            } while (retryBuffer);
+            } while (true);
 
             this.TraceLog($"buffer {buffer.Length} returning");
             return this.ProcessFlushResult
             (
-                in buffer,
-                in readPosition,
                 flushTask,
-                retryBuffer,
+                //retry flush if buffer not written completely
+                buffer.IsEmpty || buffer.End.Equals(readPosition),
                 cancellationToken
             );
         }
@@ -645,28 +661,23 @@ namespace ThePlague.Networking.Tls
         private async ValueTask<FlushResult> AwaitTaskAndRetryFlushAsync
         (
             Task awaitableTask,
-            ReadOnlySequence<byte> buffer,
-            bool retryBuffer,
             CancellationToken cancellationToken
         )
         {
-            this.TraceLog("awaiting out of band write");
+            this.TraceLog($"awaiting out of band write");
 
             //this awaitable will free _writeAwaiter
             await awaitableTask.ConfigureAwait(false);
 
-            this.TraceLog("awaited out of band write");
+            this.TraceLog($"awaited out of band write");
 
             cancellationToken.ThrowIfCancellationRequested();
 
             //the awaitableTask should have changed state back to null
             //or another thread has taken it
             //retry taking _writeAwaiter
-            return await this.FlushAsyncCore
+            return await this.FlushAsync
             (
-                buffer,
-                retryBuffer,
-                _WriteCompletedTask,
                 cancellationToken
             );
         }
@@ -692,6 +703,8 @@ namespace ThePlague.Networking.Tls
                     pipeWriter,
                     out readPosition
                 );
+
+                this.TraceLog($"WriteSsl (buffer {buffer.Length})");
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -754,6 +767,7 @@ namespace ThePlague.Networking.Tls
                     this._unencryptedWriteBuffer.AdvanceReader(readPosition, buffer.End);
                 }
 
+                this.TraceLog("initiated flush");
                 flushTask = pipeWriter.FlushAsync(cancellationToken);
             }
             catch (Exception ex)
@@ -770,24 +784,17 @@ namespace ThePlague.Networking.Tls
 
         private ValueTask<FlushResult> ProcessFlushResult
         (
-            in ReadOnlySequence<byte> buffer,
-            in SequencePosition readPosition,
             ValueTask<FlushResult> flushTask,
-            bool retryBuffer,
+            bool bufferFlushed,
             CancellationToken cancellationToken
         )
         {
-            bool bufferFlushed = buffer.IsEmpty
-                || buffer.End.Equals(readPosition);
-
             if (!flushTask.IsCompletedSuccessfully)
             {
                 return this.AwaitInnerFlushAsync
                 (
                     flushTask,
                     bufferFlushed,
-                    retryBuffer,
-                    buffer,
                     cancellationToken
                 );
             }
@@ -797,8 +804,7 @@ namespace ThePlague.Networking.Tls
                 //get result to get possible exception
                 this.TraceLog("sync flush");
 
-                if (bufferFlushed
-                    || !retryBuffer)
+                if (bufferFlushed)
                 {
                     return flushTask;
                 }
@@ -808,11 +814,8 @@ namespace ThePlague.Networking.Tls
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
             }
 
-            return this.FlushAsyncCore
+            return this.FlushAsync
             (
-                buffer,
-                retryBuffer,
-                _WriteCompletedTask,
                 cancellationToken
             );
         }
@@ -821,8 +824,6 @@ namespace ThePlague.Networking.Tls
         (
             ValueTask<FlushResult> flushTask,
             bool bufferFlushed,
-            bool retryBuffer,
-            ReadOnlySequence<byte> buffer,
             CancellationToken cancellationToken
         )
         {
@@ -831,8 +832,7 @@ namespace ThePlague.Networking.Tls
                 FlushResult flushResult = await flushTask.ConfigureAwait(false);
                 this.TraceLog("async flush");
 
-                if (bufferFlushed
-                    || !retryBuffer)
+                if (bufferFlushed)
                 {
                     return flushResult;
                 }
@@ -842,11 +842,8 @@ namespace ThePlague.Networking.Tls
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
             }
 
-            return await this.FlushAsyncCore
+            return await this.FlushAsync
             (
-                buffer,
-                retryBuffer,
-                _WriteCompletedTask,
                 cancellationToken
             );
         }
@@ -880,11 +877,11 @@ namespace ThePlague.Networking.Tls
 
             if (sslState.WantsWrite())
             {
-                ValueTask<bool> ReturnRenegotiateTask(CancellationToken cancellationToken)
+                ValueTask<bool> ReturnRenegotiateTask(bool bufferRead, CancellationToken cancellationToken)
                     => renegotiateTask;
 
                 this.TraceLog("write during renegotiate requested");
-                return this.WriteDuringReadAsync(ReturnRenegotiateTask, cancellationToken);
+                return this.WriteDuringReadAsync(ReturnRenegotiateTask, true, cancellationToken);
             }
 
             if (sslState.WantsRead())
