@@ -154,7 +154,7 @@ namespace ThePlague.Networking.Tls
                         out read
                     );
 
-                    pipeReader.AdvanceTo(read, buffer.End);
+                    pipeReader.AdvanceTo(read);
 
                     cancellationToken.ThrowIfCancellationRequested();
 
@@ -315,7 +315,7 @@ namespace ThePlague.Networking.Tls
         private SslState ProcessReadResult
         (
             in ReadOnlySequence<byte> buffer,
-            out SequencePosition read
+            out SequencePosition readPosition
         )
         {
             SslState sslState;
@@ -328,10 +328,16 @@ namespace ThePlague.Networking.Tls
                 (
                     buffer,
                     this._decryptedReadBuffer,
-                    out read
+                    out readPosition
                 );
 
-                this.TraceLog("ReadSsl");
+                this.TraceLog($"ReadSsl (buffer {buffer.Length})");
+
+                if (!buffer.IsEmpty
+                    && !buffer.Start.Equals(readPosition))
+                {
+                    this._innerReader.AdvanceTo(readPosition);
+                }
 
                 if (sslState.IsShutdown())
                 {
@@ -341,12 +347,6 @@ namespace ThePlague.Networking.Tls
                 }
 
                 this.ProcessRenegotiate(in sslState);
-
-                if(!buffer.IsEmpty
-                    && !buffer.Start.Equals(read))
-                {
-                    this._innerReader.AdvanceTo(read);
-                }
             }
             catch(Exception ex)
             {
@@ -539,7 +539,7 @@ namespace ThePlague.Networking.Tls
             this._unencryptedWriteBuffer.CreateReadOnlySequence(out ReadOnlySequence<byte> flushedBuffer);
             return this.FlushAsyncCore
             (
-                flushedBuffer,
+                in flushedBuffer,
                 _WriteCompletedTask,
                 cancellationToken
             );
@@ -706,6 +706,14 @@ namespace ThePlague.Networking.Tls
 
                 this.TraceLog($"WriteSsl (buffer {buffer.Length})");
 
+                //only advance reader when a read has occured
+                if (!buffer.IsEmpty
+                    && !buffer.Start.Equals(readPosition))
+                {
+                    //advance write reader
+                    this._unencryptedWriteBuffer.AdvanceReader(readPosition);
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (sslState.IsShutdown())
@@ -745,26 +753,22 @@ namespace ThePlague.Networking.Tls
                     //the buffer gets completely ignored, until the wanted read (or other operation) gets statisfied
                     else
                     {
-                        this.TraceLog($"0 unflushed bytes on filled buffer, retry flush ({sslState}) @ {(readPosition.Equals(buffer.Start) ? "start" : "not start")}");
                         flushTask = default;
 
                         //might have been a partial ssl write (to guarantee 16k payload) which hasn't been flushed yet
                         if (!buffer.Start.Equals(readPosition))
                         {
-                            this.TraceLog("0 unflushed bytes on filled buffer, flush to ssl succeeded");
-                            this._unencryptedWriteBuffer.AdvanceReader(readPosition);
+                            this.TraceLog($"0 unflushed bytes on filled buffer, flush to ssl succeeded, cancel flush to writer ({sslState})");
+
+                            //cancel flush
                             return true;
                         }
 
+                        this.TraceLog($"0 unflushed bytes on filled buffer, retry flush ({sslState})");
+
+                        //retry flush
                         return false;
                     }
-                }
-
-                //only advance when a read has occured
-                if (!buffer.IsEmpty)
-                {
-                    //advance write reader
-                    this._unencryptedWriteBuffer.AdvanceReader(readPosition, buffer.End);
                 }
 
                 this.TraceLog("initiated flush");

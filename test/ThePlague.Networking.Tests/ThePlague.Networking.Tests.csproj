@@ -3,13 +3,16 @@
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
-
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
     <ItemGroup>
         <FrameworkReference Include="Microsoft.AspNetCore.App" />
     </ItemGroup>
+
+  <PropertyGroup>
+    <LogByDate Condition="'$(LogByDate)' == ''">true</LogByDate>
+  </PropertyGroup>
     
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.11.0" />
@@ -34,4 +37,8 @@
     <ProjectReference Include="..\..\src\ThePlague.Networking.Tls\ThePlague.Networking.Tls.csproj" />
   </ItemGroup>
 
+  <PropertyGroup>
+    <DefineConstants Condition="'$(LogByDate)' == 'true'">$(DefineConstants);LOGBYDATE</DefineConstants>
+  </PropertyGroup>
+  
 </Project>

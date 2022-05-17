@@ -36,9 +36,9 @@ namespace ThePlague.Networking.Tests
 
         public static IEnumerable<object[]> GetEndPointAnd1MBTestSize() => new object[][]
         {
-            new object[] { CreateUnixDomainSocketEndPoint(), 1024, 1024 * 1024 },
-            new object[] { CreateUnixDomainSocketEndPoint(), 1024 * 4, 1024 * 1024 },
-            new object[] { CreateUnixDomainSocketEndPoint(), 1024 * 16, 1024 * 1024 },
+            new object[] { OperatingSystem.IsLinux() ? CreateUnixDomainSocketEndPoint() : CreateIPEndPoint(), 1024, 1024 * 1024 },
+            new object[] { OperatingSystem.IsLinux() ? CreateUnixDomainSocketEndPoint() : CreateIPEndPoint(), 1024 * 4, 1024 * 1024 },
+            new object[] { OperatingSystem.IsLinux() ? CreateUnixDomainSocketEndPoint() : CreateIPEndPoint(), 1024 * 16, 1024 * 1024 },
         };
 
         internal IServiceProvider ServiceProvider => this._servicesState.ServiceProvider;

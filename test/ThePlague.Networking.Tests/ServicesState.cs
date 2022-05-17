@@ -42,11 +42,26 @@ namespace ThePlague.Networking.Tests
                 }
             );
 
-            FileStream file = File.Open(_FileName, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+            string path;
+
+#if LOGBYDATE
+            string filename = string.Concat(_FileName, "_", DateTime.Now.ToFileTime().ToString());
+
+            if(!Directory.Exists("log"))
+            {
+                Directory.CreateDirectory("log");
+            }
+
+            path = Path.Combine("log", filename);
+#else
+            path = _FileName;
+#endif
+            
+            FileStream file = File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
 
             //truncate file
             file.SetLength(0);
-            TextWriter textWriter = new StreamWriter(file, Encoding.Unicode, -1, false);
+            TextWriter textWriter = new StreamWriter(file, Encoding.UTF8, -1, false);
 
             this.ServiceProvider = new ServiceCollection()
                 .AddLogging(builder =>
