@@ -6,6 +6,7 @@ using System.Net;
 using System.Runtime.InteropServices;
 using System.Buffers;
 using System.Security.Cryptography;
+using System.Collections.Generic;
 
 using Xunit;
 using Xunit.Abstractions;
@@ -15,6 +16,7 @@ using Microsoft.Extensions.Logging;
 
 using ThePlague.Networking.Connections;
 using ThePlague.Networking.Transports.Sockets;
+using Xunit.Sdk;
 
 namespace ThePlague.Networking.Tests
 {
@@ -40,7 +42,7 @@ namespace ThePlague.Networking.Tests
         protected abstract ServerBuilder ConfigureServer(ServerBuilder serverBuilder);
 
         [Theory]
-        [MemberData(nameof(GetUnixDomainSocketEndPoint))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ServerDataTest(EndPoint endpoint)
         {
             byte[] result = new byte[_ServerHello.Length * 2];
@@ -136,7 +138,7 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetUnixDomainSocketEndPoint))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ClientDataTest(EndPoint endpoint)
         {
             byte[] result = new byte[_ClientHello.Length * 2];
@@ -241,16 +243,18 @@ namespace ThePlague.Networking.Tests
             PipeWriter writer,
             int maxBufferSize,
             int testSize,
+            Memory<byte> sent,
             ILogger logger,
             bool sendContinuous = false,
             CancellationToken cancellationToken = default
         )
         {
             int bytesSent = 0;
-            int randomSize, adjustedSize;
+            int randomSize, adjustedLength, concreteLength;
             Memory<byte> writeMemory;
             ValueTask<FlushResult> flushResultTask;
             FlushResult flushResult;
+            byte index = 0;
 
             //ensure it does not go through synchronous (and blocks)
             await Task.Yield();
@@ -260,33 +264,53 @@ namespace ThePlague.Networking.Tests
             {
                 //ensure it can handle zero byte writes
                 randomSize = RandomNumberGenerator.GetInt32(4, maxBufferSize);
-                adjustedSize = randomSize;
+                adjustedLength = randomSize;
 
                 if ((bytesSent + randomSize) > testSize)
                 {
-                    adjustedSize = testSize - bytesSent;
+                    adjustedLength = testSize - bytesSent;
                 }
 
                 //don't try sending 0 bytes
                 if(!sendContinuous 
-                    && adjustedSize <= 0)
+                    && adjustedLength <= 0)
                 {
                     break;
                 }
 
+                concreteLength = sendContinuous ? randomSize : adjustedLength;
+
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     //fill buffer with random data
-                    writeMemory = writer.GetMemory(randomSize);
+                    writeMemory = writer.GetMemory(concreteLength);
                     logger.TraceLog(connectionId, "buffer acquired");
 
-                    //worth about 1/4 CPU time of test method (!!!)
-                    OpenSSL.Core.Interop.Random.PseudoBytes(writeMemory.Span);
+                    writeMemory
+                        .Slice(0, concreteLength)
+                        .Span
+                        .Fill(unchecked(index++));
 
                     //only advance computed size, should always be >= 0
                     //because the loop will end after this call
-                    writer.Advance(sendContinuous ? randomSize : adjustedSize);
-                    logger.TraceLog(connectionId, $"buffer advanced ({(sendContinuous ? randomSize : adjustedSize)})");
+                    writer.Advance(concreteLength);
+                    logger.TraceLog(connectionId, $"buffer advanced ({concreteLength})");
+
+                    //copy data before flush
+                    //else it might get replaced with incorrect data
+                    if (!sent.IsEmpty
+                        && adjustedLength > 0)
+                    {
+                        writeMemory
+                            .Slice(0, adjustedLength)
+                            .CopyTo(sent.Slice(bytesSent));
+                    }
+
+                    bytesSent += concreteLength;
+
+                    logger.TraceLog(connectionId, $"flushing {concreteLength} of {index}");
 
                     logger.TraceLog(connectionId, "flush initiated");
                     flushResultTask = writer.FlushAsync(cancellationToken);
@@ -304,14 +328,14 @@ namespace ThePlague.Networking.Tests
                 }
                 catch(OperationCanceledException)
                 {
+                    logger.TraceLog(connectionId, "writer canceled");
                     return bytesSent;
                 }
-                
-                bytesSent += (sendContinuous ? randomSize : adjustedSize);
 
-                if(flushResult.IsCompleted
+                if (flushResult.IsCompleted
                     || flushResult.IsCanceled)
                 {
+                    logger.TraceLog(connectionId, "writer completed/canceled");
                     break;
                 }
             }
@@ -324,6 +348,7 @@ namespace ThePlague.Networking.Tests
             string connectionId,
             PipeReader pipeReader,
             int testSize,
+            Memory<byte> received,
             ILogger logger,
             bool receiveContinuous = true,
             CancellationToken cancellationToken = default
@@ -335,7 +360,7 @@ namespace ThePlague.Networking.Tests
             ValueTask<ReadResult> readResultTask;
             ReadResult readResult;
             int bytesReceived = 0;
-            int length = 0;
+            ReadOnlySequence<byte> buffer;
 
             while(receiveContinuous
                 || bytesReceived < testSize)
@@ -359,37 +384,140 @@ namespace ThePlague.Networking.Tests
                 }
                 catch(OperationCanceledException)
                 {
+                    logger.TraceLog(connectionId, "reader canceled");
+
+                    if (pipeReader.TryRead(out readResult))
+                    {
+                        logger.TraceLog(connectionId, "more data after cancellation");
+
+                        buffer = readResult.Buffer;
+
+                        ComputeBytesReceivedAndAppend
+                        (
+                            connectionId,
+                            testSize,
+                            receiveContinuous,
+                            ref bytesReceived,
+                            in buffer,
+                            received,
+                            logger
+                        );
+
+                        pipeReader.AdvanceTo(buffer.End);
+                    }
+
                     return bytesReceived;
                 }
 
-                foreach(ReadOnlyMemory<byte> memory in readResult.Buffer)
-                {
-                    if(memory.IsEmpty)
-                    {
-                        continue;
-                    }
+                buffer = readResult.Buffer;
 
-                    length = memory.Length;
+                ComputeBytesReceivedAndAppend
+                (
+                    connectionId,
+                    testSize,
+                    receiveContinuous,
+                    ref bytesReceived,
+                    in buffer,
+                    received,
+                    logger
+                );
 
-                    if ((bytesReceived + length) > testSize)
-                    {
-                        length = testSize - bytesReceived;
-                    }
-
-                    bytesReceived += (receiveContinuous ? memory.Length : length);
-                }
-
-                pipeReader.AdvanceTo(readResult.Buffer.End);
-                logger.TraceLog(connectionId, "reader advanced");
+                pipeReader.AdvanceTo(buffer.End);
 
                 if (readResult.IsCompleted
                     || readResult.IsCanceled)
                 {
-                    break;
+                    if(buffer.IsEmpty)
+                    {
+                        logger.TraceLog(connectionId, "reader completed/canceled");
+                        break;
+                    }
+                    else
+                    {
+                        logger.TraceLog(connectionId, "reader completed/canceled with buffer, continueing");
+                    }
                 }
             }
 
             return bytesReceived;
+        }
+
+        private static void ComputeBytesReceivedAndAppend
+        (
+            string connectionId,
+            int testSize,
+            bool receiveContinuous,
+            ref int bytesReceived,
+            in ReadOnlySequence<byte> buffer,
+            Memory<byte> received,
+            ILogger logger
+        )
+        {
+            int length;
+
+            foreach (ReadOnlyMemory<byte> memory in buffer)
+            {
+                if (memory.IsEmpty)
+                {
+                    continue;
+                }
+
+                logger.TraceLog(connectionId, $"received {string.Join(',', memory.ToArray())}");
+
+                length = memory.Length;
+
+                if ((bytesReceived + length) > testSize)
+                {
+                    length = testSize - bytesReceived;
+                }
+
+                if(!receiveContinuous
+                    && length <= 0)
+                {
+                    break;
+                }
+
+                if (!received.IsEmpty
+                    && length > 0)
+                {
+                    memory
+                        .Slice(0, length)
+                        .CopyTo(received.Slice(bytesReceived));
+                }
+
+                bytesReceived += (receiveContinuous ? memory.Length : length);
+            }
+        }
+
+        private static void AssertSentReceived
+        (
+            byte[] sent,
+            byte[] received
+        )
+        {
+            List<ValueTuple<int, byte, byte>> assertions = new List<(int, byte, byte)>();
+
+            for (int i = 0; i < sent.Length; i++)
+            {
+                if (sent[i] != received[i])
+                {
+                    assertions.Add((i, sent[i], received[i]));
+                }
+
+                //try
+                //{
+                //    Assert.Equal(sent[i], received[i]);
+                //}
+                //catch (EqualException)
+                //{
+                //    throw new XunitException($"Incorrect @ {i}");
+                //}
+            }
+
+            if (assertions.Count > 0)
+            {
+                throw new XunitException(string.Join('\n', assertions.Select(t => $"sent {t.Item2}, received {t.Item3} @ {t.Item1}")));
+            }
         }
 
         [Theory]
@@ -397,6 +525,8 @@ namespace ThePlague.Networking.Tests
         public async Task ServerWriteCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
+            byte[] sent = new byte[testSize];
+            byte[] received = new byte[testSize];
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -418,16 +548,15 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            async(ConnectionContext ctx) =>
+                            async (ConnectionContext ctx) =>
                             {
-                                ReadResult readResult = default;
-
                                 bytesSent = await RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    sent,
                                     this._logger
                                 );
 
@@ -435,14 +564,9 @@ namespace ThePlague.Networking.Tests
                                 ctx.Transport.Output.Complete();
 
                                 //await close from client
-                                try
-                                {
-                                    readResult = await ctx.Transport.Input.ReadAsync();
-                                }
-                                catch
-                                { }
-
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
                                 Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
 
                                 //close reader
                                 ctx.Transport.Input.Complete();
@@ -472,13 +596,17 @@ namespace ThePlague.Networking.Tests
                                     ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
+                                    received,
                                     this._logger
                                 );
 
-                                //close sender and send close to server
-                                ctx.Transport.Output.Complete();
+                                //done reading, should not block
+                                //close got received during RandomDataReceiver
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
 
-                                //done reading
+                                ctx.Transport.Output.Complete();
                                 ctx.Transport.Input.Complete();
                             }
                         )
@@ -489,6 +617,8 @@ namespace ThePlague.Networking.Tests
 
             Assert.Equal(testSize, bytesSent);
             Assert.Equal(bytesSent, bytesReceived);
+
+            Assert.True(sent.SequenceEqual(received));
         }
 
         [Theory]
@@ -496,6 +626,8 @@ namespace ThePlague.Networking.Tests
         public async Task ClientReadCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
+            byte[] sent = new byte[testSize];
+            byte[] received = new byte[testSize];
             Task<int> clientSender;
 
             int serverClientIndex = 0;
@@ -521,6 +653,7 @@ namespace ThePlague.Networking.Tests
                             async (ConnectionContext ctx) =>
                             {
                                 ReadResult readResult;
+                                ReadOnlySequence<byte> buffer;
                                 PipeReader reader = ctx.Transport.Input;
 
                                 bytesReceived = await RandomDataReceiver
@@ -528,6 +661,7 @@ namespace ThePlague.Networking.Tests
                                     ctx.ConnectionId,
                                     reader,
                                     testSize,
+                                    received,
                                     this._logger,
                                     false
                                 );
@@ -536,24 +670,27 @@ namespace ThePlague.Networking.Tests
                                 ctx.Transport.Output.Complete();
 
                                 //wait on close confirmation from client
+                                //and ignore rest of data
                                 while(true)
                                 {
-                                    try
-                                    {
-                                        //ignore rest of data
-                                        readResult = await reader.ReadAsync();
-                                        reader.AdvanceTo(readResult.Buffer.End);
+                                    //ignore rest of data
+                                    readResult = await reader.ReadAsync();
+                                    buffer = readResult.Buffer;
+                                    reader.AdvanceTo(buffer.End);
 
-                                        if(readResult.IsCompleted)
-                                        {
-                                            break;
-                                        }
+                                    if(readResult.IsCompleted
+                                        && buffer.IsEmpty)
+                                    {
+                                        break;
                                     }
-                                    catch
-                                    { }
                                 }
 
                                 Assert.True(readResult.IsCompleted);
+
+                                //verify close
+                                readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
 
                                 //done reading
                                 reader.Complete();
@@ -588,6 +725,7 @@ namespace ThePlague.Networking.Tests
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    sent,
                                     this._logger,
                                     true,
                                     cts.Token
@@ -596,6 +734,7 @@ namespace ThePlague.Networking.Tests
                                 //wait until server sender sends shutdown
                                 readResult = await ctx.Transport.Input.ReadAsync();
                                 Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
 
                                 //complete sender
                                 cts.Cancel();
@@ -603,7 +742,6 @@ namespace ThePlague.Networking.Tests
                                 ctx.Transport.Output.Complete();
                                 cts.Dispose();
 
-                                //also complete input (which should already be completed)
                                 //due to close receievd from server through ReadAsync
                                 ctx.Transport.Input.Complete();
                             }
@@ -615,6 +753,8 @@ namespace ThePlague.Networking.Tests
 
             Assert.Equal(testSize, bytesReceived);
             Assert.True(bytesSent >= bytesReceived);
+
+            Assert.True(sent.SequenceEqual(received));
         }
 
         [Theory]
@@ -624,7 +764,12 @@ namespace ThePlague.Networking.Tests
             int serverBytesSent = 0, serverBytesReceived = 0;
             int clientBytesSent = 0, clientBytesReceived = 0;
 
-            Task<int> serverSender, serverReceiver, clientSender, clientReceiver;
+            byte[] serverSent = new byte[testSize];
+            byte[] serverReceived = new byte[testSize];
+            byte[] clientSent = new byte[testSize];
+            byte[] clientReceived = new byte[testSize];
+
+            Task<int> serverReceiver, clientReceiver;
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -653,34 +798,34 @@ namespace ThePlague.Networking.Tests
                                     ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
+                                    serverReceived,
                                     this._logger,
                                     true
                                 );
 
-                                serverSender = RandomDataSender
+                                serverBytesSent = await RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    serverSent,
                                     this._logger,
                                     false
                                 );
-
-                                //server sender will end when testSize reached
-                                await serverSender;
 
                                 //initiate close from server, this should end
                                 //client read thread
                                 ctx.Transport.Output.Complete();
 
                                 //server receiver will end through client close
-                                await serverReceiver;
-                                
-                                serverBytesReceived = serverReceiver.Result;
-                                serverBytesSent = serverSender.Result;
+                                serverBytesReceived = await serverReceiver;
 
-                                //stop reading
+                                //verify close
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
+
                                 ctx.Transport.Input.Complete();
                             }
                         )
@@ -708,31 +853,34 @@ namespace ThePlague.Networking.Tests
                                     ctx.ConnectionId,
                                     ctx.Transport.Input,
                                     testSize,
+                                    clientReceived,
                                     this._logger,
                                     true
                                 );
 
-                                clientSender = RandomDataSender
+                                clientBytesSent = await RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    clientSent,
                                     this._logger,
                                     false
                                 );
 
-                                //client receiver will end through server close
-                                //client sender will end when testSize reached
-                                await Task.WhenAll(clientReceiver, clientSender);
-
-                                clientBytesReceived = clientReceiver.Result;
-                                clientBytesSent = clientSender.Result;
-
-                                //complete close to server
+                                //initiate close from server, this should end
+                                //client read thread
                                 ctx.Transport.Output.Complete();
 
-                                //stop reading
+                                //server receiver will end through client close
+                                clientBytesReceived = await clientReceiver;
+
+                                //verify close
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
+
                                 ctx.Transport.Input.Complete();
                             }
                         )
@@ -743,9 +891,11 @@ namespace ThePlague.Networking.Tests
 
             Assert.Equal(testSize, serverBytesSent);
             Assert.Equal(serverBytesSent, clientBytesReceived);
+            Assert.True(serverSent.SequenceEqual(clientReceived));
 
             Assert.Equal(testSize, clientBytesSent);
             Assert.Equal(clientBytesSent, serverBytesReceived);
+            Assert.True(clientSent.SequenceEqual(serverReceived));
         }
     }
 }

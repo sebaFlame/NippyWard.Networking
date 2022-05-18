@@ -29,9 +29,9 @@ namespace ThePlague.Networking.Tests
             new object[] { CreateUnixDomainSocketEndPoint() }
         };
 
-        public static IEnumerable<object[]> GetUnixDomainSocketEndPoint() => new object[][]
+        public static IEnumerable<object[]> GetEndPoint() => new object[][]
         {
-            new object[] { CreateUnixDomainSocketEndPoint() }
+            new object[] { OperatingSystem.IsLinux() ? CreateUnixDomainSocketEndPoint() : CreateIPEndPoint() }
         };
 
         public static IEnumerable<object[]> GetEndPointAnd1MBTestSize() => new object[][]

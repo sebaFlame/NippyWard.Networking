@@ -60,7 +60,7 @@ namespace ThePlague.Networking.Tests
             );
 
         [Theory]
-        [MemberData(nameof(GetUnixDomainSocketEndPoint))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ServerRenegotiateTest(EndPoint endpoint)
         {
             //Force TLS1.2 to enforce a real renegotiation 
@@ -156,6 +156,16 @@ namespace ThePlague.Networking.Tests
         {
             //Force TLS1.2 to enforce a real renegotiation 
 
+            int serverBytesSent = 0, serverBytesReceived = 0;
+            int clientBytesSent = 0, clientBytesReceived = 0;
+
+            Task<int> serverSender, clientSender, serverReceiver, clientReceiver;
+
+            byte[] serverSent = new byte[testSize];
+            byte[] serverReceived = new byte[testSize];
+            byte[] clientSent = new byte[testSize];
+            byte[] clientReceived = new byte[testSize];
+
             int serverClientIndex = 0;
             int clientIndex = 0;
             string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
@@ -175,46 +185,55 @@ namespace ThePlague.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
+                                IMeasuredDuplexPipe pipeFeature = ctx.Features.Get<IMeasuredDuplexPipe>();
+                                ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>();
                                 PipeReader reader = ctx.Transport.Input;
 
-                                Task<int> serverReceiver = RandomDataReceiver
+                                serverReceiver = RandomDataReceiver
                                 (
                                     ctx.ConnectionId,
-                                    ctx.Transport.Input,
+                                    reader,
                                     testSize,
+                                    serverReceived,
                                     this._logger,
                                     true
                                 );
 
-                                CancellationTokenSource cts = new CancellationTokenSource();
-
-                                Task<int> serverSender = RandomDataSender
+                                serverSender = RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    serverSent,
                                     this._logger,
-                                    true,
-                                    cts.Token
+                                    false
                                 );
 
-                                ITlsHandshakeFeature? handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>();
-                                if (handShakeFeature is not null)
+                                //wait on atleast 10 buffer sizes to start renegotiate
+                                //this should be at most at about 10% of entire test (when 16k buffers)
+                                while(pipeFeature.TotalBytesSent < maxBufferSize * 10)
                                 {
-                                    await handShakeFeature.RenegotiateAsync();
+                                    Thread.Sleep(1);
                                 }
 
-                                //complete sending after 100 milliseconds of sending and send close to client
-                                cts.CancelAfter(100);
-                                await serverSender;
+                                await handShakeFeature.RenegotiateAsync();
+
+                                //wait until sender completes
+                                serverBytesSent = await serverSender;
+
+                                //initiate close from server, this should end
+                                //client read thread
                                 ctx.Transport.Output.Complete();
-                                cts.Dispose();
 
-                                //receiver should stop
-                                await serverReceiver;
+                                //server receiver will end through client close
+                                serverBytesReceived = await serverReceiver;
 
-                                //stop reading
+                                //verify close
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
+
                                 ctx.Transport.Input.Complete();
                             }
                         )
@@ -235,38 +254,39 @@ namespace ThePlague.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
-                                CancellationTokenSource cts = new CancellationTokenSource();
+                                clientReceiver = RandomDataReceiver
+                                (
+                                    ctx.ConnectionId,
+                                    ctx.Transport.Input,
+                                    testSize,
+                                    clientReceived,
+                                    this._logger,
+                                    true
+                                );
 
-                                Task<int> clientSender = RandomDataSender
+                                clientBytesSent = await RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
+                                    clientSent,
                                     this._logger,
-                                    true,
-                                    cts.Token
+                                    false
                                 );
 
-                                Task<int> clientReceiver = RandomDataReceiver
-                                (
-                                    ctx.ConnectionId,
-                                    ctx.Transport.Input,
-                                    testSize,
-                                    this._logger,
-                                    true
-                                );
-
-                                //when close requested from server, this one will finish first
-                                await clientReceiver;
-
-                                //confirm close to server
-                                cts.Cancel();
-                                await clientSender;
+                                //initiate close from server, this should end
+                                //client read thread
                                 ctx.Transport.Output.Complete();
-                                cts.Dispose();
 
-                                //stop reading
+                                //server receiver will end through client close
+                                clientBytesReceived = await clientReceiver;
+
+                                //verify close
+                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
+
                                 ctx.Transport.Input.Complete();
                             }
                         )
@@ -274,6 +294,14 @@ namespace ThePlague.Networking.Tests
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
+
+            Assert.Equal(testSize, serverBytesSent);
+            Assert.Equal(serverBytesSent, clientBytesReceived);
+            Assert.True(serverSent.SequenceEqual(clientReceived));
+
+            Assert.Equal(testSize, clientBytesSent);
+            Assert.Equal(clientBytesSent, serverBytesReceived);
+            Assert.True(clientSent.SequenceEqual(serverReceived));
         }
     }
 }

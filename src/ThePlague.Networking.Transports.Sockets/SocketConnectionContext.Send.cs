@@ -88,8 +88,7 @@ namespace ThePlague.Networking.Transports.Sockets
                                 await writerArgs
                             );
                         }
-
-                        if(result.IsCompleted)
+                        else if(result.IsCompleted)
                         {
                             this.TraceLog("completed");
                             break;
@@ -260,15 +259,21 @@ namespace ThePlague.Networking.Transports.Sockets
             }
 
             ArraySegment<byte> segment;
-            foreach(ReadOnlyMemory<byte> b in buffer)
+            foreach (ReadOnlyMemory<byte> b in buffer)
             {
-                if(!MemoryMarshal.TryGetArray(b, out segment))
+                if (b.IsEmpty)
+                {
+                    continue;
+                }
+
+                if (!MemoryMarshal.TryGetArray(b, out segment))
                 {
                     throw new InvalidOperationException
                     (
                         "MemoryMarshal.TryGetArray<byte> could not provide an array"
                     );
                 }
+
                 list.Add(segment);
             }
 
