@@ -602,9 +602,9 @@ namespace ThePlague.Networking.Tests
 
                                 //done reading, should not block
                                 //close got received during RandomDataReceiver
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
+                                //ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                //Assert.True(readResult.IsCompleted);
+                                //Assert.Equal(0, readResult.Buffer.Length);
 
                                 ctx.Transport.Output.Complete();
                                 ctx.Transport.Input.Complete();
@@ -769,7 +769,7 @@ namespace ThePlague.Networking.Tests
             byte[] clientSent = new byte[testSize];
             byte[] clientReceived = new byte[testSize];
 
-            Task<int> serverReceiver, clientReceiver;
+            Task<int> clientSender, serverReceiver, clientReceiver;
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -818,15 +818,20 @@ namespace ThePlague.Networking.Tests
                                 //client read thread
                                 ctx.Transport.Output.Complete();
 
-                                //server receiver will end through client close
-                                serverBytesReceived = await serverReceiver;
+                                try
+                                {
+                                    //server receiver will end through client close
+                                    serverBytesReceived = await serverReceiver;
 
-                                //verify close
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                ctx.Transport.Input.Complete();
+                                    //verify close
+                                    ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                                    Assert.True(readResult.IsCompleted);
+                                    Assert.Equal(0, readResult.Buffer.Length);
+                                }
+                                finally
+                                {
+                                    ctx.Transport.Input.Complete();
+                                }
                             }
                         )
                 )
@@ -858,7 +863,7 @@ namespace ThePlague.Networking.Tests
                                     true
                                 );
 
-                                clientBytesSent = await RandomDataSender
+                                clientSender = RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
@@ -869,12 +874,15 @@ namespace ThePlague.Networking.Tests
                                     false
                                 );
 
-                                //initiate close from server, this should end
-                                //client read thread
-                                ctx.Transport.Output.Complete();
+                                //close from server will end clientReceiver
+                                //clientSender will end when testSize has been sent
+                                await Task.WhenAll(clientReceiver, clientSender);
 
-                                //server receiver will end through client close
-                                clientBytesReceived = await clientReceiver;
+                                clientBytesReceived = clientReceiver.Result;
+                                clientBytesSent = clientSender.Result;
+
+                                //acknowledge close to server
+                                ctx.Transport.Output.Complete();
 
                                 //verify close
                                 ReadResult readResult = await ctx.Transport.Input.ReadAsync();

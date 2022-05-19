@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks.Sources;
 
 using System.IO.Pipelines;
 using Microsoft.Extensions.Logging;
@@ -46,7 +47,7 @@ namespace ThePlague.Networking.Tls
 
         private static Task _WriteCompletedTask;
         private Task _writeAwaiter;
-        private TaskCompletionSource<bool> _renegotiateWaiter;
+        private RenegotiateAwaiter _renegotiateWaiter;
 
         private Ssl _ssl;
 
@@ -262,26 +263,34 @@ namespace ThePlague.Networking.Tls
                 out readPosition
             );
 
-            if (!(readResult.IsCompleted
-                || readResult.IsCanceled))
+            if (readResult.IsCompleted
+                || readResult.IsCanceled)
             {
-                if (sslState.WantsWrite())
+                //advance when completed, to remove reading state
+                //advance only in reverse conditions of ProcessReadResult
+                if (buffer.IsEmpty
+                    || buffer.Start.Equals(readPosition))
                 {
-                    this.TraceLog("write during read requested");
-                    return this.WriteDuringReadAsync<ReadResult>
-                    (
-                        this.ReturnReadResult,
-                        //retry read if buffer not read completely
-                        buffer.IsEmpty || buffer.End.Equals(readPosition),
-                        cancellationToken
-                    );
+                    this._innerReader.AdvanceTo(buffer.Start);
                 }
+            }
 
-                if (sslState.WantsRead())
-                {
-                    this.TraceLog("read during read requested");
-                    return this.ReadAsync(cancellationToken);
-                }
+            if (sslState.WantsWrite())
+            {
+                this.TraceLog("write during read requested");
+                return this.WriteDuringReadAsync<ReadResult>
+                (
+                    this.ReturnReadResult,
+                    //retry read if buffer not read completely
+                    buffer.IsEmpty || buffer.End.Equals(readPosition),
+                    cancellationToken
+                );
+            }
+
+            if (sslState.WantsRead())
+            {
+                this.TraceLog("read during read requested");
+                return this.ReadAsync(cancellationToken);
             }
 
             //get the decrypted buffer
@@ -415,6 +424,7 @@ namespace ThePlague.Networking.Tls
 
             cancellationToken.ThrowIfCancellationRequested();
 
+            //use a Task based one as there could be multiple awaiters
             TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
             //do a zero length write
@@ -854,15 +864,40 @@ namespace ThePlague.Networking.Tls
         #endregion
 
         #region renegotiate
+        private class RenegotiateAwaiter : IValueTaskSource<bool>
+        {
+            private ManualResetValueTaskSourceCore<bool> _core;
+
+            public RenegotiateAwaiter()
+            {
+                this._core = new ManualResetValueTaskSourceCore<bool>();
+            }
+
+            public bool GetResult(short token)
+                => this._core.GetResult(token);
+
+            public ValueTaskSourceStatus GetStatus(short token)
+                => this._core.GetStatus(token);
+
+            public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+                => this._core.OnCompleted(continuation, state, token, flags);
+
+            public void SetResult(bool result)
+                => this._core.SetResult(result);
+
+            public void SetException(Exception exception)
+                => this._core.SetException(exception);
+        }
+
         /// <summary>
         /// Initialize and complete a SSL/TLS renegotatiate.
         /// Ensure you're always reading.
         /// </summary>
-        public ValueTask<bool> RenegotiateAsync(CancellationToken cancellationToken = default)
+        public ValueTask<bool> RenegotiateAsync()
         {
             SslState sslState;
-            this._renegotiateWaiter = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter.Task);
+            this._renegotiateWaiter = new RenegotiateAwaiter();
+            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter, 0);
 
             this.TraceLog("renegotiating");
 
@@ -885,7 +920,7 @@ namespace ThePlague.Networking.Tls
                     => renegotiateTask;
 
                 this.TraceLog("write during renegotiate requested");
-                return this.WriteDuringReadAsync(ReturnRenegotiateTask, true, cancellationToken);
+                return this.WriteDuringReadAsync(ReturnRenegotiateTask, true, CancellationToken.None);
             }
 
             if (sslState.WantsRead())
@@ -893,7 +928,7 @@ namespace ThePlague.Networking.Tls
                 this.TraceLog("read during renegotiate requested");
             }
 
-            return new ValueTask<bool>(this._renegotiateWaiter.Task);
+            return renegotiateTask;
         }
         #endregion
 

@@ -25,6 +25,6 @@ namespace ThePlague.Networking.Tls
         /// Renegotiate the current TLS connection
         /// </summary>
         /// <returns>True when successfull or throws an <see cref="OpenSSL.Core.Error.OpenSslException"/></returns>
-        ValueTask<bool> RenegotiateAsync(CancellationToken cancellationToken = default);
+        ValueTask<bool> RenegotiateAsync();
     }
 }
