@@ -70,6 +70,7 @@ namespace ThePlague.Networking.Transports.Sockets
         public override IDuplexPipe Transport { get; set; }
         public override IFeatureCollection Features { get; }
         public override IDictionary<object, object> Items { get; set; }
+        public override CancellationToken ConnectionClosed { get => this._connectionClosedTokenSource.Token; set => throw new NotSupportedException(); }
 
         private int _socketShutdownKind;
 
@@ -169,7 +170,6 @@ namespace ThePlague.Networking.Transports.Sockets
 
             //set transport pipe
             this.Transport = this;
-            this.ConnectionClosed = this._connectionClosedTokenSource.Token;
 
             this._previousTotalBytesSent = 0;
             this._previousTotalBytesReceived = 0;
@@ -252,10 +252,33 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this.TraceLog("abort on ConnectionContext called");
 
+            if(this._connectionClosedTokenSource.IsCancellationRequested)
+            {
+                return;
+            }
+
             this.TrySetShutdown
             (
                 PipeShutdownKind.ConnectionAborted
             );
+
+            //complete if not completed yet, so write thread can end
+            //this does not override existing completion
+            try
+            {
+                this._output.Complete(new ConnectionAbortedException(nameof(SocketConnectionContext)));
+            }
+            catch
+            { }
+
+            //complete if not completed yet, so read thread can end
+            //this does not override existing completion
+            try
+            {
+                this._input.Complete(new ConnectionAbortedException(nameof(SocketConnectionContext)));
+            }
+            catch
+            { }
 
             this._connectionClosedTokenSource.Cancel();
         }
@@ -284,8 +307,18 @@ namespace ThePlague.Networking.Transports.Sockets
 
         public override async ValueTask DisposeAsync()
         {
-            //ensure connection closed
-            this._connectionClosedTokenSource.Cancel();
+            try
+            {
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.ConnectionAborted
+                );
+
+                //ensure connection closed
+                this._connectionClosedTokenSource.Cancel();
+            }
+            catch
+            { }
 
             this.Dispose();
 

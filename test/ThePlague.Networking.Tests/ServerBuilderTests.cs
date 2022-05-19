@@ -16,19 +16,17 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 using ThePlague.Networking.Connections;
-using ThePlague.Networking.Transports.Sockets;
 
 namespace ThePlague.Networking.Tests
 {
-    [Collection("logging")]
-    public class ServerBuilderTests : BaseSocketTests
+    public class ServerBuilderTests : BaseTestConnectionContextTests
     {
         public ServerBuilderTests(ServicesState serviceState)
             : base(serviceState)
         { }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ServerTaskSingleClientTest(EndPoint endPoint)
         {
             TaskCompletionSource serverClientCompleted, clientCompleted;
@@ -64,24 +62,32 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task CancellableServerTaskMultiClientTest(EndPoint endpoint)
         {
             int maxClient = 10;
+            int serverCount = 0;
+            int clientCount = 0;
+
             CancellationTokenSource cts = new CancellationTokenSource();
-            int currentClientCount = 0;
+            TaskCompletionSource[] tcs = new TaskCompletionSource[maxClient];
             Task[] clients = new Task[maxClient];
-            int currentClientIndex = 0;
 
             int serverClientIndex = 0;
             int clientIndex = 0;
 
+            for (int i = 0; i < maxClient; i++)
+            {
+                tcs[i] = new TaskCompletionSource();
+            }
+
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+                .UseTestConnection
                 (
                     endpoint,
                     () => $"CancellableServerTaskMultiClientTest_server_{serverClientIndex++}_{endpoint}"
                 )
+                .ConfigureMaxClients(10)
                 .ConfigureConnection
                 (
                     (c) =>
@@ -90,20 +96,27 @@ namespace ThePlague.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
-                                int index = Interlocked.Increment(ref currentClientCount);
+                                int index = Interlocked.Increment(ref serverCount);
+                                TaskCompletionSource t = tcs[--index];
 
-                                //close connection
-                                ctx.Transport.Output.Complete();
+                                CancellationTokenRegistration reg = ctx.ConnectionClosed.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), t, false);
+                                try
+                                {
+                                    await t.Task;
+                                }
+                                finally
+                                {
+                                    reg.Dispose();
+                                }
 
-                                //await confirmation
-                                await ctx.Transport.Input.ReadAsync();
+                                await next(ctx);
                             }
                         )
                 )
                 .BuildMultiClient(cts.Token);
 
             ClientFactory clientFactory = new ClientBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseTestConnection
                 (
                     () => $"CancellableServerTaskMultiClientTest_client_{clientIndex++}_{endpoint}"
                 )
@@ -113,15 +126,11 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            async (ConnectionContext ctx) =>
+                            (ConnectionContext ctx) =>
                             {
-                                int index = Interlocked.Increment(ref currentClientIndex);
-
-                                //await connection close
-                                await ctx.Transport.Input.ReadAsync();
-
-                                //confirm close
-                                ctx.Transport.Output.Complete();
+                                int index = Interlocked.Increment(ref clientCount);
+                                tcs[--index].SetResult();
+                                return next(ctx);
                             }
                         )
                 )
@@ -137,41 +146,49 @@ namespace ThePlague.Networking.Tests
             await Task.WhenAll(clients);
 
             //check if all clients connected
-            Assert.Equal(maxClient, currentClientIndex);
+            Assert.Equal(maxClient, clientCount);
 
             //shutdown the server with a timeout to allow connections to gracefully close
             //as there is no way to await the clients when using a server as Task only
-            cts.CancelAfter(1000);
+            cts.CancelAfter(100);
 
             //await the server
             await serverTask;
 
             //check if all clients have connected to server
-            Assert.Equal(maxClient, currentClientCount);
+            Assert.Equal(maxClient, serverCount);
 
             //ceck if the server shut down cleanly
             Assert.True(serverTask.IsCompletedSuccessfully);
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task DisposableServerMultiClientTest(EndPoint endpoint)
         {
             int maxClient = 10;
+            int serverCount = 0;
+            int clientCount = 0;
+
             CancellationTokenSource cts = new CancellationTokenSource();
-            int currentClientCount = 0;
-            int currentClientIndex = 0;
+            TaskCompletionSource[] tcs = new TaskCompletionSource[maxClient];
             Task[] clients = new Task[maxClient];
 
             int serverClientIndex = 0;
             int clientIndex = 0;
 
+            for (int i = 0; i < maxClient; i++)
+            {
+                tcs[i] = new TaskCompletionSource();
+            }
+
             Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+                .UseTestConnection
                 (
                     endpoint,
                     () => $"DisposableServerMultiClientTest_server_{serverClientIndex++}_{endpoint}"
                 )
+                .ConfigureMaxClients(10)
                 .ConfigureConnection
                 (
                     (c) =>
@@ -180,20 +197,27 @@ namespace ThePlague.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
-                                int index = Interlocked.Increment(ref currentClientCount);
+                                int index = Interlocked.Increment(ref serverCount);
+                                TaskCompletionSource t = tcs[--index];
 
-                                //close connection
-                                ctx.Transport.Output.Complete();
+                                CancellationTokenRegistration reg = ctx.ConnectionClosed.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), t, false);
+                                try
+                                {
+                                    await t.Task;
+                                }
+                                finally
+                                {
+                                    reg.Dispose();
+                                }
 
-                                //await confirmation
-                                await ctx.Transport.Input.ReadAsync();
+                                await next(ctx);
                             }
                         )
                 )
                 .BuildServer();
 
             ClientFactory clientFactory = new ClientBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseTestConnection
                 (
                     () => $"DisposableServerMultiClientTest_client_{clientIndex++}_{endpoint}"
                 )
@@ -203,15 +227,11 @@ namespace ThePlague.Networking.Tests
                         c.Use
                         (
                             next =>
-                            async (ConnectionContext ctx) =>
+                            (ConnectionContext ctx) =>
                             {
-                                int index = Interlocked.Increment(ref currentClientIndex);
-
-                                //await connection close
-                                await ctx.Transport.Input.ReadAsync();
-
-                                //confirm close
-                                ctx.Transport.Output.Complete();
+                                int index = Interlocked.Increment(ref clientCount);
+                                tcs[--index].SetResult();
+                                return next(ctx);
                             }
                         )
                 )
@@ -231,13 +251,13 @@ namespace ThePlague.Networking.Tests
                 await Task.WhenAll(clients);
 
                 //check if all clients have connected
-                Assert.Equal(maxClient, currentClientIndex);
+                Assert.Equal(maxClient, clientCount);
 
                 //await all server connections
                 await server.Connections;
 
                 //check if all clients have connected to server
-                Assert.Equal(maxClient, currentClientCount);
+                Assert.Equal(maxClient, serverCount);
             }
         }
     }

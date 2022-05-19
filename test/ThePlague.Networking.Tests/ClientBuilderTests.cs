@@ -1,35 +1,25 @@
 ﻿using System;
 using System.Threading;
-using System.Linq;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Net;
-using System.Net.Sockets;
-using System.Net.NetworkInformation;
 
 using Xunit;
-using Xunit.Sdk;
-using Xunit.Abstractions;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
 
 using ThePlague.Networking.Connections;
-using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Connections.Middleware;
 
 namespace ThePlague.Networking.Tests
 {
-    [Collection("logging")]
-    public class ClientBuilderTests : BaseSocketTests
+    public class ClientBuilderTests : BaseTestConnectionContextTests
     {
         public ClientBuilderTests(ServicesState serviceState)
             : base(serviceState)
         { }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ClientTaskTest(EndPoint endPoint)
         {
             TaskCompletionSource serverClientCompleted, clientCompleted;
@@ -63,7 +53,7 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ClientTest(EndPoint endPoint)
         {
             TaskCompletionSource serverClientCompleted, clientCompleted;
@@ -99,7 +89,7 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task ClientFactoryTest(EndPoint endPoint)
         {
             TaskCompletionSource serverClientCompleted, clientCompleted;
@@ -137,38 +127,33 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task CancellableClientTaskTest(EndPoint endpoint)
         {
             CancellationTokenSource clientCts = new CancellationTokenSource();
             TaskCompletionSource clientConnected = new TaskCompletionSource();
             TaskCompletionSource clientTerminal = new TaskCompletionSource();
+            TaskCompletionSource serverConnected = new TaskCompletionSource();
 
             int serverClientIndex = 0;
             int clientIndex = 0;
 
-            Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+            Server server = CreatServerBuilder
                 (
+                    this.ServiceProvider,
                     endpoint,
+                    serverConnected,
                     () => $"CancellableClientTaskTest_server_{serverClientIndex++}_{endpoint}"
                 )
-                .ConfigureSingleConnection()
-                .ConfigureConnection
-                (
-                    //ensure both ends stay open
-                    (c) => c.UseTerminal()
-                )
+                .ConfigureMaxClients(1)
                 .BuildServer();
-
-            TestConnectionLifetime connectionLifetime = new TestConnectionLifetime(clientTerminal);
 
             await using(server)
             {
                 await server.StartAsync();
 
                 Task clientTask = new ClientBuilder(this.ServiceProvider)
-                    .UseBlockingSendSocket
+                    .UseTestConnection
                     (
                         () => $"CancellableClientTaskTest_client_{clientIndex++}_{endpoint}"
                     )
@@ -178,50 +163,58 @@ namespace ThePlague.Networking.Tests
                             c.Use
                             (
                                 next =>
-                                (ConnectionContext ctx) =>
+                                async (ConnectionContext ctx) =>
                                 {
-                                    ctx.Features.Set<IConnectionLifetimeNotificationFeature>(connectionLifetime);
-                                    clientConnected.SetResult();
-                                    return next(ctx);
+                                    CancellationTokenRegistration reg = ctx.ConnectionClosed.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), clientTerminal, false);
+
+                                    try
+                                    {
+                                        clientConnected.SetResult();
+                                        await clientTerminal.Task;
+                                    }
+                                    finally
+                                    {
+                                        reg.Dispose();
+                                    }
+
+                                    await next(ctx);
                                 }
                             )
                     )
                     .Build(endpoint, clientCts.Token);
 
-                //ensure client is connected
-                await clientConnected.Task;
+                //ensure client and server are "connected"
+                await Task.WhenAll(serverConnected.Task, clientConnected.Task);
 
                 //cancel the client
+                //this initiates ctx.ConnectionClosed
                 clientCts.Cancel();
 
-                //check if no errors are thrown after clean shutdown using IConnectionLifetimeNotificationFeature
-                await clientTask;
+                //check if the cancellation gets thrown, because it does not get caught
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => clientTask);
             }
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoints))]
+        [MemberData(nameof(GetEndPoint))]
         public async Task DisposableClientTest(EndPoint endpoint)
         {
             CancellationTokenSource clientCts = new CancellationTokenSource();
             TaskCompletionSource clientConnected = new TaskCompletionSource();
             TaskCompletionSource clientTerminal = new TaskCompletionSource();
+            TaskCompletionSource serverConnected = new TaskCompletionSource();
 
             int serverClientIndex = 0;
             int clientIndex = 0;
 
-            Server server = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+            Server server = CreatServerBuilder
                 (
+                    this.ServiceProvider,
                     endpoint,
+                    serverConnected,
                     () => $"DisposableClientTest_server_{serverClientIndex++}_{endpoint}"
                 )
-                .ConfigureSingleConnection()
-                .ConfigureConnection
-                (
-                    //ensure both ends stay open
-                    (c) => c.UseTerminal()
-                )
+                .ConfigureMaxClients(1)
                 .BuildServer();
 
             TestConnectionLifetime connectionLifetime = new TestConnectionLifetime(clientTerminal);
@@ -231,7 +224,7 @@ namespace ThePlague.Networking.Tests
                 await server.StartAsync();
 
                 Client client = await new ClientBuilder(this.ServiceProvider)
-                    .UseBlockingSendSocket
+                    .UseTestConnection
                     (
                         () => $"DisposableClientTest_client_{clientIndex++}_{endpoint}"
                     )
@@ -241,11 +234,15 @@ namespace ThePlague.Networking.Tests
                             c.Use
                             (
                                 next =>
-                                (ConnectionContext ctx) =>
+                                async (ConnectionContext ctx) =>
                                 {
                                     ctx.Features.Set<IConnectionLifetimeNotificationFeature>(connectionLifetime);
+
                                     clientConnected.SetResult();
-                                    return next(ctx);
+
+                                    await clientTerminal.Task;
+
+                                    await next(ctx);
                                 }
                             )
                     )
@@ -259,6 +256,8 @@ namespace ThePlague.Networking.Tests
                     await clientConnected.Task;
                 }
             }
+
+            Assert.True(clientTerminal.Task.IsCompletedSuccessfully);
         }
 
         private class TestConnectionLifetime : IConnectionLifetimeNotificationFeature

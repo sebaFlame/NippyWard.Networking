@@ -14,23 +14,23 @@ using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Tests
 {
-    [CollectionDefinition("logging")]
-    public class LoggingCollection : ICollectionFixture<ServicesState>
-    { }
-
-    public class ServicesState : IAsyncLifetime
+    public class LogWriter : IAsyncDisposable
     {
-        public IServiceProvider ServiceProvider { get; private set; }
-
-        private const string _FileName = "log";
+        public ChannelWriter<string> Writer => this._channelWriter;
+        public static LogWriter Instance => _Instance;
 
         private ChannelWriter<string> _channelWriter;
-        private Task _logWriter;
+        private Task _doLogWriter;
 
-        public ServicesState()
-        { }
+        private const string _FileName = "log";
+        private static LogWriter _Instance;
 
-        public Task InitializeAsync()
+        static LogWriter()
+        {
+            _Instance = new LogWriter();
+        }
+
+        private LogWriter()
         {
             Channel<string> channel = Channel.CreateUnbounded<string>
             (
@@ -63,34 +63,11 @@ namespace ThePlague.Networking.Tests
             file.SetLength(0);
             TextWriter textWriter = new StreamWriter(file, Encoding.UTF8, -1, false);
 
-            this.ServiceProvider = new ServiceCollection()
-                .AddLogging(builder =>
-                {
-                    builder.SetMinimumLevel(LogLevel.Trace);
-                    //builder.AddDebug();
-                    builder.AddProvider(new FileLoggerProvider(channel.Writer));
-                })
-                .BuildServiceProvider();
-
             this._channelWriter = channel.Writer;
-            this._logWriter = LogWriter(textWriter, channel.Reader);
-
-            return Task.CompletedTask;
+            this._doLogWriter = DoLogWrite(textWriter, channel.Reader);
         }
 
-        public async Task DisposeAsync()
-        {
-            this._channelWriter.Complete();
-
-            try
-            {
-                await this._logWriter;
-            }
-            catch
-            { }
-        }
-
-        private static async Task LogWriter
+        private static async Task DoLogWrite
         (
             TextWriter textWriter,
             ChannelReader<string> channelReader
@@ -101,45 +78,81 @@ namespace ThePlague.Networking.Tests
             ValueTask<string> lineTask;
             string line;
 
-            while(true)
+            try
             {
-                lineTask = channelReader.ReadAsync();
+                while (true)
+                {
+                    lineTask = channelReader.ReadAsync();
 
-                if (lineTask.IsCompletedSuccessfully)
-                {
-                    line = lineTask.Result;
-                }
-                else
-                {
-                    line = await lineTask;
-                }
+                    if (lineTask.IsCompletedSuccessfully)
+                    {
+                        line = lineTask.Result;
+                    }
+                    else
+                    {
+                        line = await lineTask;
+                    }
 
-                if(string.IsNullOrEmpty(line))
-                {
-                    continue;
-                }
-
-                do
-                {
                     if (string.IsNullOrEmpty(line))
                     {
                         continue;
                     }
 
-                    await textWriter.WriteLineAsync(line);
-                } while (channelReader.TryRead(out line));
+                    do
+                    {
+                        if (string.IsNullOrEmpty(line))
+                        {
+                            continue;
+                        }
 
-                await textWriter.FlushAsync();
+                        await textWriter.WriteLineAsync(line);
+                    } while (channelReader.TryRead(out line));
+
+                    await textWriter.FlushAsync();
+                }
             }
+            finally
+            {
+                await textWriter.DisposeAsync();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            this._channelWriter.Complete();
+
+            try
+            {
+                await this._doLogWriter;
+            }
+            catch
+            { }
+        }
+    }
+
+    public class ServicesState
+    {
+        public IServiceProvider ServiceProvider { get; private set; }
+
+        public ServicesState()
+        {
+            this.ServiceProvider = new ServiceCollection()
+                .AddLogging(builder =>
+                {
+                    builder.SetMinimumLevel(LogLevel.Trace);
+                    //builder.AddDebug();
+                    builder.AddProvider(new FileLoggerProvider(LogWriter.Instance));
+                })
+                .BuildServiceProvider();
         }
 
         private class FileLoggerProvider : ILoggerProvider
         {
             private ChannelWriter<string> _channelWriter;
 
-            public FileLoggerProvider(ChannelWriter<string> channelWriter)
+            public FileLoggerProvider(LogWriter logWriter)
             {
-                this._channelWriter = channelWriter;
+                this._channelWriter = logWriter.Writer;
             }
 
             public ILogger CreateLogger(string categoryName)

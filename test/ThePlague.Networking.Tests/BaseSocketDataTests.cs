@@ -38,9 +38,6 @@ namespace ThePlague.Networking.Tests
             this._logger = this.ServiceProvider.CreateLogger<BaseSocketDataTests>();
         }
 
-        protected abstract ClientBuilder ConfigureClient(ClientBuilder clientBuilder);
-        protected abstract ServerBuilder ConfigureServer(ServerBuilder serverBuilder);
-
         [Theory]
         [MemberData(nameof(GetEndPoint))]
         public async Task ServerDataTest(EndPoint endpoint)

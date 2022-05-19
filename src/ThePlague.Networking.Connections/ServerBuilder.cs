@@ -45,12 +45,11 @@ namespace ThePlague.Networking.Connections
         }
 
         /// <summary>
-        /// Configure the <see cref="Server"/> to only allow a single connection.
-        /// And await that single connection during execution.
+        /// Configure the <see cref="Server"/> to only allow <paramref name="maxClients"/> a connections.
         /// </summary>
-        public ServerBuilder ConfigureSingleConnection(bool isSingle = true)
+        public ServerBuilder ConfigureMaxClients(uint maxClients)
         {
-            this._serverContext.AcceptSingleConnection = isSingle;
+            this._serverContext.MaxClients = maxClients;
             return this;
         }
 
@@ -105,9 +104,8 @@ namespace ThePlague.Networking.Connections
         /// <returns>A task representing the listening to multiple <see cref="ConnectionContext"/></returns>
         public Task BuildMultiClient(CancellationToken shutdownCancellation)
         {
-            this.ConfigureSingleConnection(false);
             return this.Build(shutdownCancellation);
-        }   
+        }
 
         /// <summary>
         /// Builds a <see cref="Task"/> representing a server listening to single incoming connection per <see cref="ServerContext.Bindings"/>.
@@ -116,7 +114,7 @@ namespace ThePlague.Networking.Connections
         /// <returns>A task representing the listening to single <see cref="ConnectionContext"/></returns>
         public Task BuildSingleClient(CancellationToken shutdownCancellation = default)
         {
-            this.ConfigureSingleConnection(true);
+            this.ConfigureMaxClients(1);
             return this.Build(shutdownCancellation);
         }
     }

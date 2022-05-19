@@ -18,10 +18,10 @@ namespace ThePlague.Networking.Connections
         public IDictionary<EndPoint, IConnectionListenerFactory> Bindings { get; }
 
         /// <summary>
-        /// Configure the <see cref="Server"/> to only allow a single <see cref="ConnectionContext"/>
-        /// per <see cref="EndPoint"/> binding.
+        /// Configure the <see cref="Server"/> to only allow <see cref="MaxClients"/> clients.
+        /// A value of 0 allow unlimited.
         /// </summary>
-        public bool AcceptSingleConnection { get; set; }
+        public uint MaxClients { get; set; }
 
         /// <summary>
         /// Seconds to wait for connections to "gracefully" close

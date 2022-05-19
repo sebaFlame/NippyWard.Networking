@@ -31,18 +31,5 @@ namespace ThePlague.Networking.Connections.Middleware
                 ).OnConnectionAsync
             );
         }
-
-        /// <summary>
-        /// Use a terminal which "blocks" the ConnectionDelegate until
-        /// it gets aborted or closed. This terminal implements a <see cref="IConnectionLifetimeNotificationFeature"/>
-        /// to gracefully exit the delegate.
-        /// </summary>
-        public static IConnectionBuilder UseTerminal(this IConnectionBuilder connectionBuilder)
-        {
-            return connectionBuilder.Use
-            (
-                next => new ConnectionTerminal().OnConnectionAsync
-            );
-        }
     }
 }

@@ -91,26 +91,14 @@ namespace ThePlague.Networking.Connections
                 connectionListenerFactory = kv.Value;
                 connectionListener = await connectionListenerFactory.BindAsync(kv.Key, cancellationToken);
 
-                if(this._serverContext.AcceptSingleConnection)
-                {
-                    listenTasks[index] = this.ListenSingleConnectionAsync
-                    (
-                        connectionListener,
-                        index,
-                        this._connections,
-                        cancellationToken
-                    );
-                }
-                else
-                {
-                    listenTasks[index] = this.ListenMultipleConnectionAsync
-                    (
-                        connectionListener,
-                        index,
-                        this._connections,
-                        cancellationToken
-                    );
-                }
+                listenTasks[index] = this.ListenConnectionsAsync
+                (
+                    index,
+                    this._serverContext.MaxClients,
+                    connectionListener,
+                    this._connections,
+                    cancellationToken
+                );
 
                 index++;
             }
@@ -135,7 +123,7 @@ namespace ThePlague.Networking.Connections
         private async Task<ulong> ListenConnectionsAsync
         (
             byte listenerIndex,
-            bool listenMultiple,
+            uint maxClients,
             IConnectionListener connectionListener,
             IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
@@ -183,7 +171,8 @@ namespace ThePlague.Networking.Connections
                             cancellationToken
                         )
                     );
-                } while (listenMultiple);
+                } while (maxClients == 0
+                    || connectionCount < maxClients);
 
                 //only single connection, await it
                 this._logger.LogTrace("[Server] awaiting single connection");
@@ -213,24 +202,6 @@ namespace ThePlague.Networking.Connections
 
             return connectionCount;
         }
-
-        internal Task ListenMultipleConnectionAsync
-        (
-            IConnectionListener connectionListener,
-            byte index,
-            IDictionary<ulong, Task> connections,
-            CancellationToken cancellationToken
-        )
-            => this.ListenConnectionsAsync(index, true, connectionListener, connections, cancellationToken);
-
-        internal Task ListenSingleConnectionAsync
-        (
-            IConnectionListener connectionListener,
-            byte index,
-            IDictionary<ulong, Task> connections,
-            CancellationToken cancellationToken
-        )
-            => this.ListenConnectionsAsync(index, false, connectionListener, connections, cancellationToken);
 
         private static async Task ExecuteConnectionContext
         (

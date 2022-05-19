@@ -21,8 +21,11 @@ using ThePlague.Networking.Transports.Sockets;
 
 namespace ThePlague.Networking.Tests
 {
-    public abstract class BaseSocketTests
+    public abstract class BaseSocketTests : IClassFixture<ServicesState>
     {
+        //DO NOT use on windows
+        //weird issues using Unix Domain Sockets on windows
+        //eg socket shutdown not being sent to peer
         public static IEnumerable<object[]> GetEndPoints() => new object[][]
         {
             new object[] { CreateIPEndPoint() },
@@ -57,6 +60,9 @@ namespace ThePlague.Networking.Tests
         {
             this._servicesState = serviceState;
         }
+
+        protected abstract ClientBuilder ConfigureClient(ClientBuilder clientBuilder);
+        protected abstract ServerBuilder ConfigureServer(ServerBuilder serverBuilder);
 
         internal static IPEndPoint CreateIPEndPoint()
             => new IPEndPoint(IPAddress.Loopback, GetAvailablePort());
@@ -99,69 +105,120 @@ namespace ThePlague.Networking.Tests
         (
             IServiceProvider serviceProvider,
             EndPoint endpoint,
-            TaskCompletionSource serverTcs,
             Func<string> createName
         )
-        {
-            return new ServerBuilder(serviceProvider)
-                .UseBlockingSendSocket(endpoint, createName)
-                .ConfigureConnection
-                (
-                    (c) =>
-                        c.Use
-                        (
-                            next =>
-                            (ConnectionContext ctx) =>
-                            {
-                                serverTcs.SetResult();
-                                return next(ctx);
-                            }
-                        )
-                );
-        }
+            => ConfigureDefaultServerClose
+            (
+                new ServerBuilder(serviceProvider)
+                    .UseBlockingSendSocket(endpoint, createName)
+            );
 
         internal static ClientBuilder CreateClientBuilder
         (
             IServiceProvider serviceProvider,
-            TaskCompletionSource clientTcs,
             Func<string> createName
         )
-        {
-            return new ClientBuilder(serviceProvider)
-                .UseBlockingSendSocket(createName)
-                .ConfigureConnection
-                (
-                    (c) =>
-                        c.Use
-                        (
-                            next =>
-                            (ConnectionContext ctx) =>
-                            {
-                                clientTcs.SetResult();
-                                return next(ctx);
-                            }
-                        )
-                );
-        }
+            => ConfigureDefaultServerClose
+            (
+                new ClientBuilder(serviceProvider)
+                    .UseBlockingSendSocket(createName)
+            );
 
-        internal static Task CreateClientTask
+        internal static ServerBuilder ConfigureDefaultServerClose(ServerBuilder serverBuilder)
+            => serverBuilder.ConfigureConnection
+            (
+                (c) =>
+                    c.Use
+                    (
+                        next =>
+                        async (ConnectionContext ctx) =>
+                        {
+                            //close connection
+                            ctx.Transport.Output.Complete();
+
+                            try
+                            {
+                                //await confirmation
+                                await ctx.Transport.Input.ReadAsync();
+                            }
+                            finally
+                            {
+                                ctx.Transport.Input.Complete();
+                            }
+                        }
+                    )
+            );
+
+        internal static ClientBuilder ConfigureDefaultServerClose(ClientBuilder clientBuilder)
+            => clientBuilder.ConfigureConnection
+            (
+                (c) =>
+                    c.Use
+                    (
+                        next =>
+                        async (ConnectionContext ctx) =>
+                        {
+                            try
+                            {
+                                //await connection close
+                                await ctx.Transport.Input.ReadAsync();
+                            }
+                            finally
+                            {
+                                //confirm close
+                                ctx.Transport.Output.Complete();
+                                ctx.Transport.Input.Complete();
+                            }
+                        }
+                    )
+            );
+
+        internal static async Task CreateClientTask
         (
-            Client client,
-            TaskCompletionSource tcs
+            Client client
         )
         {
-            return Task.Run
-            (
-                async () =>
-                {
-                    await using (client)
-                    {
-                        await client.StartAsync();
+            await Task.Yield();
 
-                        await tcs.Task;
-                    }
-                }
-            );
+            await using (client)
+            {
+                await client.StartAsync();
+
+                //DisposeAsync waits on the connection
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(GetEndPoint))]
+        public async Task ConnectionTest(EndPoint endpoint)
+        {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
+            Task serverTask = this.ConfigureServer
+                (
+                    CreatServerBuilder
+                    (
+                        this.ServiceProvider,
+                        endpoint,
+                        () => $"ConnectionTest_server_{serverClientIndex++}_{endpoint}"
+                    )
+                )
+                .BuildSingleClient();
+
+            Client client = await this.ConfigureClient
+                (
+                    CreateClientBuilder
+                    (
+                        this.ServiceProvider,
+                        () => $"ConnectionTest_client_{clientIndex++}_{endpoint}"
+                    )
+                )
+                .BuildClient(endpoint);
+
+            Task clientTask = CreateClientTask(client);
+
+            await Task.WhenAll(serverTask, clientTask);
         }
     }
 }
