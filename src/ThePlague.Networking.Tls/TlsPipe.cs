@@ -198,6 +198,14 @@ namespace ThePlague.Networking.Tls
 
         internal ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
         {
+            ReadResult readResult;
+            //first prioritize a sync read
+            if (this._innerReader.TryRead(out readResult))
+            {
+                return this.ProcessReadResult(in readResult, cancellationToken);
+            }
+
+            //then check the exisiting buffer
             if (this._decryptedReadBuffer.Length > 0)
             {
                 this.TraceLog("buffered read available");
@@ -211,8 +219,8 @@ namespace ThePlague.Networking.Tls
 
                 return new ValueTask<ReadResult>(tlsResult);
             }
-
-            ReadResult readResult;
+            
+            //then try an async read
             ValueTask<ReadResult> readResultTask = this._innerReader.ReadAsync(cancellationToken);
             if (!readResultTask.IsCompletedSuccessfully)
             {
@@ -290,6 +298,7 @@ namespace ThePlague.Networking.Tls
             if (sslState.WantsRead())
             {
                 this.TraceLog("read during read requested");
+                //TODO: possible stack overflow?
                 return this.ReadAsync(cancellationToken);
             }
 
@@ -328,6 +337,7 @@ namespace ThePlague.Networking.Tls
         )
         {
             SslState sslState;
+            readPosition = buffer.Start;
 
             try
             {
@@ -342,12 +352,6 @@ namespace ThePlague.Networking.Tls
 
                 this.TraceLog($"ReadSsl (buffer {buffer.Length})");
 
-                if (!buffer.IsEmpty
-                    && !buffer.Start.Equals(readPosition))
-                {
-                    this._innerReader.AdvanceTo(readPosition);
-                }
-
                 if (sslState.IsShutdown())
                 {
                     this.TraceLog("shutdown during read requested");
@@ -361,6 +365,14 @@ namespace ThePlague.Networking.Tls
             {
                 this.ProcessRenegotiate(ex);
                 throw;
+            }
+            finally
+            {
+                if (!buffer.IsEmpty
+                    && !buffer.Start.Equals(readPosition))
+                {
+                    this._innerReader.AdvanceTo(readPosition);
+                }
             }
 
             return sslState;
@@ -426,6 +438,7 @@ namespace ThePlague.Networking.Tls
 
             //use a Task based one as there could be multiple awaiters
             TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationTokenRegistration reg = cancellationToken.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), tcs, false);
 
             //do a zero length write
             try
@@ -441,6 +454,7 @@ namespace ThePlague.Networking.Tls
             catch (Exception ex)
             {
                 tcs.SetException(ex);
+                reg.Dispose();
                 throw;
             }
 
@@ -450,6 +464,7 @@ namespace ThePlague.Networking.Tls
                 (
                     flushTask,
                     tcs,
+                    reg,
                     bufferRead,
                     postWriteFunction,
                     cancellationToken
@@ -467,6 +482,8 @@ namespace ThePlague.Networking.Tls
                 {
                     ThrowPipeCompleted();
                 }
+
+                tcs.SetResult();
             }
             catch (Exception ex)
             {
@@ -475,7 +492,7 @@ namespace ThePlague.Networking.Tls
             }
             finally
             {
-                tcs.SetResult();
+                reg.Dispose();
             }
 
             return postWriteFunction(flushResult, bufferRead, cancellationToken);
@@ -485,6 +502,7 @@ namespace ThePlague.Networking.Tls
         (
             ValueTask<FlushResult> flushTask,
             TaskCompletionSource tcs,
+            CancellationTokenRegistration reg,
             bool bufferRead,
             Func<FlushResult, bool ,CancellationToken, ValueTask<T>> postWriteFunction,
             CancellationToken cancellationToken
@@ -503,6 +521,8 @@ namespace ThePlague.Networking.Tls
                 {
                     ThrowPipeCompleted();
                 }
+
+                tcs.SetResult();
             }
             catch (Exception ex)
             {
@@ -511,7 +531,7 @@ namespace ThePlague.Networking.Tls
             }
             finally
             {
-                tcs.SetResult();
+                reg.Dispose();
             }
 
             return await postWriteFunction(flushResult, bufferRead, cancellationToken);
@@ -707,6 +727,7 @@ namespace ThePlague.Networking.Tls
         {
             SslState sslState;
             PipeWriter pipeWriter = this._innerWriter;
+            readPosition = buffer.Start;
 
             try
             {
@@ -718,15 +739,6 @@ namespace ThePlague.Networking.Tls
                 );
 
                 this.TraceLog($"WriteSsl (buffer {buffer.Length})");
-
-                //only advance reader when a read has occured
-                if (!buffer.IsEmpty
-                    && !buffer.Start.Equals(readPosition))
-                {
-                    //advance write reader
-                    this._unencryptedWriteBuffer.AdvanceReader(readPosition);
-                    buffer = buffer.Slice(readPosition);
-                }
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -794,6 +806,17 @@ namespace ThePlague.Networking.Tls
 
                 //rethrow
                 throw;
+            }
+            finally
+            {
+                //only advance reader when a read has occured
+                if (!buffer.IsEmpty
+                    && !buffer.Start.Equals(readPosition))
+                {
+                    //advance write reader
+                    this._unencryptedWriteBuffer.AdvanceReader(readPosition);
+                    buffer = buffer.Slice(readPosition);
+                }
             }
 
             return true;
@@ -898,6 +921,7 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Initialize and complete a SSL/TLS renegotatiate.
         /// Ensure you're always reading.
+        /// Not cancellable!
         /// </summary>
         public ValueTask<bool> RenegotiateAsync()
         {

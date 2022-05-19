@@ -23,6 +23,7 @@ namespace ThePlague.Networking.Tls
 
         /// <summary>
         /// Renegotiate the current TLS connection
+        /// Once a renegotiation is fired, it can not be canceled
         /// </summary>
         /// <returns>True when successfull or throws an <see cref="OpenSSL.Core.Error.OpenSslException"/></returns>
         ValueTask<bool> RenegotiateAsync();
