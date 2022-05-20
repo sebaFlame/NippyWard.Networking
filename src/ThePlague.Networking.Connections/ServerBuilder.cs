@@ -94,11 +94,17 @@ namespace ThePlague.Networking.Connections
             );
         }
 
+        /// <summary>
+        /// Builds a Task from a <see cref="Server"/> instance. The underlying <see cref="Server"/> object will get GC'd!
+        /// </summary>
+        /// <param name="shutdownCancellation"></param>
+        /// <returns></returns>
         public Task Build(CancellationToken shutdownCancellation = default)
             => this.BuildListenTask(shutdownCancellation);
 
         /// <summary>
         /// Builds a <see cref="Task"/> representing a server listening to multiple incoming connections per <see cref="ServerContext.Bindings"/>.
+        /// The underlying <see cref="Server"/> object will get GC'd!
         /// </summary>
         /// <param name="shutdownCancellation">A <see cref="CancellationToken"/> by which the server can be shutdown, this is not optional!!!</param>
         /// <returns>A task representing the listening to multiple <see cref="ConnectionContext"/></returns>
@@ -109,6 +115,7 @@ namespace ThePlague.Networking.Connections
 
         /// <summary>
         /// Builds a <see cref="Task"/> representing a server listening to single incoming connection per <see cref="ServerContext.Bindings"/>.
+        /// The underlying <see cref="Server"/> object will get GC'd!
         /// </summary>
         /// <param name="shutdownCancellation">An optional <see cref="CancellationToken"/> by which the server can be shutdown</param>
         /// <returns>A task representing the listening to single <see cref="ConnectionContext"/></returns>

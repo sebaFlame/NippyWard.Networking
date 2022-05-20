@@ -26,6 +26,9 @@ namespace ThePlague.Networking.Connections.Middleware
         public void Complete(Exception ex = null)
             => this._pipe.Output.Complete(ex);
 
+        public ValueTask CompleteAsync(Exception ex = null)
+            => this._pipe.Output.CompleteAsync(ex);
+
         /// <summary>
         /// Writes a message to the transport using an <see cref="IMessageWriter{TMessage}"/>.
         /// This method uses a (async) semaphore to allow only 1 write at a time.

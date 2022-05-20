@@ -10,7 +10,11 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly PipeReader _reader;
         private readonly SocketConnectionContext _connection;
 
-        public WrappedReader(PipeReader reader, SocketConnectionContext connection)
+        public WrappedReader
+        (
+            PipeReader reader,
+            SocketConnectionContext connection
+        )
         {
             this._reader = reader;
             this._connection = connection;
@@ -20,6 +24,25 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this._connection.InputReaderCompleted(exception);
             this._reader.Complete(exception);
+        }
+
+        public override ValueTask CompleteAsync(Exception exception = null)
+        {
+            try
+            {
+                this.Complete(exception);
+            }
+            catch
+            { }
+
+            if (this._connection._receiveTask is null)
+            {
+                return default;
+            }
+
+            //await the send thread
+            //use a task, so it can be awaited on multiple times
+            return new ValueTask(this._connection._receiveTask);
         }
 
         public override void AdvanceTo(SequencePosition consumed)

@@ -72,6 +72,8 @@ namespace ThePlague.Networking.Transports.Sockets
         public override IDictionary<object, object> Items { get; set; }
         public override CancellationToken ConnectionClosed { get => this._connectionClosedTokenSource.Token; set => throw new NotSupportedException(); }
 
+        internal Task _receiveTask, _sendTask;
+
         private int _socketShutdownKind;
 
         private readonly CancellationTokenSource _connectionClosedTokenSource;
@@ -90,8 +92,6 @@ namespace ThePlague.Networking.Transports.Sockets
         private long _previousTotalBytesReceived;
         private long _receiveSpeedInBytes;
         private long _sendSpeedInBytes;
-
-        private Task _receiveTask, _sendTask;
 
         //receive and send "thread"
         private static readonly Action<object> _DoReceiveAsync = DoReceiveAsync;
@@ -327,7 +327,7 @@ namespace ThePlague.Networking.Transports.Sockets
             //ensure receive/send thread ended
             //this should always happen as socket gets disposed
             //and Pipes get completed
-            //discard any errors
+            //discard any errors (they will be logged in each thread)
             try
             {
                 await Task.WhenAll(this._receiveTask, this._sendTask);

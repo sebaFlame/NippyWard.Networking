@@ -10,7 +10,11 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly PipeWriter _writer;
         private readonly SocketConnectionContext _connection;
 
-        public WrappedWriter(PipeWriter writer, SocketConnectionContext connection)
+        public WrappedWriter
+        (
+            PipeWriter writer,
+            SocketConnectionContext connection
+        )
         {
             this._writer = writer;
             this._connection = connection;
@@ -26,6 +30,25 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this._connection.OutputWriterCompleted(exception);
             this._writer.Complete(exception);
+        }
+
+        public override ValueTask CompleteAsync(Exception exception = null)
+        {
+            try
+            {
+                this.Complete(exception);
+            }
+            catch
+            { }
+
+            if(this._connection._sendTask is null)
+            {
+                return default;
+            }
+
+            //await the send thread
+            //use a task, so it can be awaited on multiple times
+            return new ValueTask(this._connection._sendTask);
         }
 
         public override void Advance(int bytes)

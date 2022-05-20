@@ -11,6 +11,8 @@ namespace ThePlague.Networking.Connections.Middleware
     {
         void Complete(Exception ex = null);
 
+        ValueTask CompleteAsync(Exception exception = null);
+
         ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default);
     }
 }

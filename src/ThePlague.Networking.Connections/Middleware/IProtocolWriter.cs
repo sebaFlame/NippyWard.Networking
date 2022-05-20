@@ -11,6 +11,8 @@ namespace ThePlague.Networking.Connections.Middleware
     {
         void Complete(Exception ex = null);
 
+        ValueTask CompleteAsync(Exception ex = null);
+
         ValueTask WriteAsync
         (
             TMessage message,

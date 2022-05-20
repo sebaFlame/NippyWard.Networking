@@ -27,6 +27,9 @@ namespace ThePlague.Networking.Connections.Middleware
         public void Complete(Exception ex = null)
             => this._pipe.Input.Complete(ex);
 
+        public ValueTask CompleteAsync(Exception ex = null)
+            => this._pipe.Input.CompleteAsync(ex);
+
         public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default)
         {
             if(this._disposed)

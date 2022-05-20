@@ -70,7 +70,7 @@ namespace ThePlague.Networking.Tests
             string nameSuffix = $"{endpoint}";
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseSocket
                 (
                     endpoint,
                     () => $"ServerRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
@@ -101,21 +101,21 @@ namespace ThePlague.Networking.Tests
                                 Assert.False(serverReadThread.IsCompleted);
 
                                 //renegotiation completed, send close
-                                ctx.Transport.Output.Complete();
+                                await ctx.Transport.Output.CompleteAsync();
 
                                 //await on close from client
                                 readResult = await serverReadThread;
                                 Assert.True(readResult.IsCompleted);
 
                                 //stop "reading"
-                                ctx.Transport.Input.Complete();
+                                await ctx.Transport.Input.CompleteAsync();
                             }
                         )
                 )
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseSocket
                 (
                     () => $"ServerRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
                 )
@@ -138,10 +138,10 @@ namespace ThePlague.Networking.Tests
                                 Assert.True(readResult.IsCompleted);
 
                                 //confirm close to server
-                                ctx.Transport.Output.Complete();
+                                await ctx.Transport.Output.CompleteAsync();
 
                                 //stop "reading"
-                                ctx.Transport.Input.Complete();
+                                await ctx.Transport.Input.CompleteAsync();
                             }
                         )
                 )
@@ -171,7 +171,7 @@ namespace ThePlague.Networking.Tests
             string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseSocket
                 (
                     endpoint,
                     () => $"DuplexRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
@@ -226,7 +226,7 @@ namespace ThePlague.Networking.Tests
 
                                 //initiate close from server, this should end
                                 //client read thread
-                                ctx.Transport.Output.Complete();
+                                await ctx.Transport.Output.CompleteAsync();
 
                                 try
                                 {
@@ -240,7 +240,7 @@ namespace ThePlague.Networking.Tests
                                 }
                                 finally
                                 {
-                                    ctx.Transport.Input.Complete();
+                                    await ctx.Transport.Input.CompleteAsync();
                                 }
                             }
                         )
@@ -248,7 +248,7 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseBlockingSendSocket
+                .UseSocket
                 (
                     () => $"DuplexRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
                 )
@@ -290,14 +290,14 @@ namespace ThePlague.Networking.Tests
                                 clientBytesSent = clientSender.Result;
 
                                 //acknowledge close to server
-                                ctx.Transport.Output.Complete();
+                                await ctx.Transport.Output.CompleteAsync();
 
                                 //verify close
                                 ReadResult readResult = await ctx.Transport.Input.ReadAsync();
                                 Assert.True(readResult.IsCompleted);
                                 Assert.Equal(0, readResult.Buffer.Length);
 
-                                ctx.Transport.Input.Complete();
+                                await ctx.Transport.Input.CompleteAsync();
                             }
                         )
                 )

@@ -69,6 +69,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         /// <summary>
         /// Creates a client with an <see cref="IDuplexPipe.Output"/> which waits (asynchronously) on all bytes being flushed to socket.
+        /// Use this with care as this removes most of the advantages of using a <see cref="Pipe"/>. Instead use <see cref="PipeWriter.CompleteAsync(Exception?)"/>
+        /// to await send thread completion.
         /// </summary>
         public static ClientBuilder UseBlockingSendSocket(this ClientBuilder clientBuilder, Func<string> createName)
             => UseClientSocket(clientBuilder, createName, sendOptions: _BlockingOptions);
@@ -114,6 +116,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         /// <summary>
         /// Server crates clients with an <see cref="IDuplexPipe.Output"/> which waits (asynchronously) on all bytes being flushed to socket.
+        /// Use this with care as this removes most of the advantages of using a <see cref="Pipe"/>. Instead use <see cref="PipeWriter.CompleteAsync(Exception?)"/>
+        /// to await send thread completion.
         /// </summary>
         public static ServerBuilder UseBlockingSendSocket(this ServerBuilder serverBuilder, EndPoint endpoint, Func<string> createName)
             => UseServerSocket(serverBuilder, endpoint, createName, sendOptions: _BlockingOptions);

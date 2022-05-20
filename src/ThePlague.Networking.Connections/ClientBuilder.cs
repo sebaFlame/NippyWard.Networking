@@ -87,6 +87,7 @@ namespace ThePlague.Networking.Connections
         /// <summary>
         /// This is a task representing a single connected <see cref="Client"/> and executing
         /// the <see cref="ConnectionDelegate"/> configured using <see cref="ConfigureConnection(Func{IConnectionBuilder, IConnectionBuilder})"/>
+        /// The underlying <see cref="Client"/> object will get GC'd!
         /// </summary>
         /// <param name="endPoint">The <see cref="EndPoint"/> to connect to</param>
         /// <param name="shutdownCancellationToken">A <see cref="CancellationToken"/> which can be used to abort the client</param>

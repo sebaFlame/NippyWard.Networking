@@ -196,6 +196,9 @@ namespace ThePlague.Networking.Tls
         internal void CompleteReader(Exception exception = null)
             => this._innerReader.Complete(exception);
 
+        internal ValueTask CompleteReaderAsync(Exception exception = null)
+            => this._innerReader.CompleteAsync(exception);
+
         internal ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
         {
             ReadResult readResult;
@@ -553,6 +556,9 @@ namespace ThePlague.Networking.Tls
 
         internal void CompleteWriter(Exception? exception = null)
             => this._innerWriter.Complete(exception);
+
+        internal ValueTask CompleteWriterAsync(Exception? exception = null)
+            => this._innerWriter.CompleteAsync(exception);
 
         internal Memory<byte> GetMemory(int sizeHint = 0)
             => this._unencryptedWriteBuffer.GetMemory(sizeHint);

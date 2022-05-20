@@ -110,7 +110,7 @@ namespace ThePlague.Networking.Tests
             => ConfigureDefaultServerClose
             (
                 new ServerBuilder(serviceProvider)
-                    .UseBlockingSendSocket(endpoint, createName)
+                    .UseSocket(endpoint, createName)
             );
 
         internal static ClientBuilder CreateClientBuilder
@@ -121,7 +121,7 @@ namespace ThePlague.Networking.Tests
             => ConfigureDefaultServerClose
             (
                 new ClientBuilder(serviceProvider)
-                    .UseBlockingSendSocket(createName)
+                    .UseSocket(createName)
             );
 
         internal static ServerBuilder ConfigureDefaultServerClose(ServerBuilder serverBuilder)
@@ -134,7 +134,7 @@ namespace ThePlague.Networking.Tests
                         async (ConnectionContext ctx) =>
                         {
                             //close connection
-                            ctx.Transport.Output.Complete();
+                            await ctx.Transport.Output.CompleteAsync();
 
                             try
                             {
@@ -143,7 +143,7 @@ namespace ThePlague.Networking.Tests
                             }
                             finally
                             {
-                                ctx.Transport.Input.Complete();
+                                await ctx.Transport.Input.CompleteAsync();
                             }
                         }
                     )
@@ -166,8 +166,8 @@ namespace ThePlague.Networking.Tests
                             finally
                             {
                                 //confirm close
-                                ctx.Transport.Output.Complete();
-                                ctx.Transport.Input.Complete();
+                                await ctx.Transport.Output.CompleteAsync();
+                                await ctx.Transport.Input.CompleteAsync();
                             }
                         }
                     )

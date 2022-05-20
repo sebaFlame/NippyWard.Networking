@@ -40,6 +40,9 @@ namespace ThePlague.Networking.Tls
         public override void Complete(Exception exception = null)
             => this._tlsPipe.CompleteWriter(exception);
 
+        public override ValueTask CompleteAsync(Exception exception = null)
+            => this._tlsPipe.CompleteWriterAsync(exception);
+
         public override ValueTask<FlushResult> FlushAsync(CancellationToken cancellationToken = default)
             => this._tlsPipe.FlushAsync(cancellationToken);
 
