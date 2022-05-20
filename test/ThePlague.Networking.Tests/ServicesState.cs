@@ -22,7 +22,10 @@ namespace ThePlague.Networking.Tests
         private ChannelWriter<string> _channelWriter;
         private Task _doLogWriter;
 
-        private const string _FileName = "log";
+#if LOGBYDATE
+        private const string _LogDirectory = "log_by_time";
+#endif
+        private const string _LogFileName = "log";
         private static LogWriter _Instance;
 
         static LogWriter()
@@ -47,14 +50,14 @@ namespace ThePlague.Networking.Tests
 #if LOGBYDATE
             string filename = string.Concat(_FileName, "_", DateTime.Now.ToFileTime().ToString());
 
-            if(!Directory.Exists("log"))
+            if(!Directory.Exists(_LogDirectory))
             {
-                Directory.CreateDirectory("log");
+                Directory.CreateDirectory(_LogDirectory);
             }
 
             path = Path.Combine("log", filename);
 #else
-            path = _FileName;
+            path = _LogFileName;
 #endif
             
             FileStream file = File.Open(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);

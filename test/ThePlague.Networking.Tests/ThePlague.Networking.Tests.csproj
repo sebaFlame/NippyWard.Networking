@@ -11,7 +11,7 @@
     </ItemGroup>
 
   <PropertyGroup>
-    <LogByDate Condition="'$(LogByDate)' == ''">true</LogByDate>
+    <LogByDate Condition="'$(LogByDate)' == ''">false</LogByDate>
   </PropertyGroup>
     
   <ItemGroup>
