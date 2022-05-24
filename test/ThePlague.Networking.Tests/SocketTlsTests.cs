@@ -313,5 +313,88 @@ namespace ThePlague.Networking.Tests
             Assert.Equal(clientBytesSent, serverBytesReceived);
             Assert.True(clientSent.SequenceEqual(serverReceived));
         }
+
+        [Theory]
+        [MemberData(nameof(GetEndPoint))]
+        public async Task ClientShutdownTest(EndPoint endpoint)
+        {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
+            Task serverTask = new ServerBuilder(this.ServiceProvider)
+                .UseSocket
+                (
+                    endpoint,
+                    () => $"ClientShutdownTest_server_{serverClientIndex++}"
+                )
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.UseServerTls(this.ServerCertificate, this.ServerKey, SslProtocol.Tls12)
+                        .Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                PipeReader reader = ctx.Transport.Input;
+
+                                ValueTask<ReadResult> readTask = reader.ReadAsync();
+
+                                await Assert.ThrowsAsync<TlsShutdownException>(async () => await readTask);
+
+                                //wait on close from client
+                                await reader.ReadAsync();
+
+                                //ack close
+                                await ctx.Transport.Output.CompleteAsync();
+                                await reader.CompleteAsync();
+
+                                await next(ctx);
+                            }
+                        )
+                )
+                .BuildSingleClient();
+
+            Task clientTask = new ClientBuilder(this.ServiceProvider)
+                .UseSocket
+                (
+                    () => $"ClientShutdownTest_client_{clientIndex++}"
+                )
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.UseClientTls(SslProtocol.Tls12)
+                        .Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                PipeReader reader = ctx.Transport.Input;
+                                ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>()!;
+
+                                ValueTask<ReadResult> readTask = reader.ReadAsync();
+
+                                await handShakeFeature.ShutdownAsync();
+
+                                await Assert.ThrowsAsync<TlsShutdownException>(async () => await readTask);
+
+                                //start socket shutdown
+                                await ctx.Transport.Output.CompleteAsync();
+
+                                //wait ack close from server
+                                ReadResult readResult = await reader.ReadAsync();
+                                Assert.True(readResult.IsCompleted);
+                                Assert.Equal(0, readResult.Buffer.Length);
+
+                                await reader.CompleteAsync();
+
+                                await next(ctx);
+                            }
+                        )
+                )
+                .Build(endpoint);
+
+            await Task.WhenAll(serverTask, clientTask);
+        }
     }
 }

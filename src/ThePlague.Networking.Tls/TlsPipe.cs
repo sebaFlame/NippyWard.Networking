@@ -16,10 +16,11 @@ using OpenSSL.Core.SSL.Buffer;
 using OpenSSL.Core.X509;
 
 using ThePlague.Networking.Connections;
+using System.Diagnostics.CodeAnalysis;
 
 namespace ThePlague.Networking.Tls
 {
-    internal partial class TlsPipe : ITlsConnectionFeature, ITlsHandshakeFeature, IDuplexPipe, IDisposable
+    internal partial class TlsPipe : ITlsConnectionFeature, ITlsHandshakeFeature, IDuplexPipe, IDisposable, IAsyncDisposable
     {
         #region IDuplexPipe
         public PipeReader Input => this.TlsPipeReader;
@@ -47,7 +48,8 @@ namespace ThePlague.Networking.Tls
 
         private static Task _WriteCompletedTask;
         private Task _writeAwaiter;
-        private RenegotiateAwaiter _renegotiateWaiter;
+        private TlsPipeValueTaskAwaiter _renegotiateWaiter;
+        private TlsPipeValueTaskAwaiter _shutdownWaiter;
 
         private Ssl _ssl;
 
@@ -286,6 +288,17 @@ namespace ThePlague.Networking.Tls
                 }
             }
 
+            //finish shutdown
+            if (sslState.IsShutdown())
+            {
+                this.TraceLog("shutdown during read requested");
+                return this.ShutdownDuringReadAsync
+                (
+                    buffer.IsEmpty || buffer.End.Equals(readPosition),
+                    cancellationToken
+                );
+            }
+
             if (sslState.WantsWrite())
             {
                 this.TraceLog("write during read requested");
@@ -333,6 +346,12 @@ namespace ThePlague.Networking.Tls
             this._renegotiateWaiter = null;
         }
 
+        private void ProcessShutdown(Exception ex)
+        {
+            this._shutdownWaiter?.SetException(ex);
+            this._shutdownWaiter = null;
+        }
+
         private SslState ProcessReadResult
         (
             in ReadOnlySequence<byte> buffer,
@@ -355,18 +374,12 @@ namespace ThePlague.Networking.Tls
 
                 this.TraceLog($"ReadSsl (buffer {buffer.Length})");
 
-                if (sslState.IsShutdown())
-                {
-                    this.TraceLog("shutdown during read requested");
-
-                    ThrowTlsShutdown();
-                }
-
                 this.ProcessRenegotiate(in sslState);
             }
             catch(Exception ex)
             {
                 this.ProcessRenegotiate(ex);
+                this.ProcessShutdown(ex);
                 throw;
             }
             finally
@@ -752,7 +765,15 @@ namespace ThePlague.Networking.Tls
                 {
                     this.TraceLog("shutdown during write requested");
 
-                    ThrowTlsShutdown();
+                    try
+                    {
+                        ThrowTlsShutdown();
+                    }
+                    finally
+                    {
+                        this._shutdownWaiter?.SetResult(true);
+                        this._shutdownWaiter = null;
+                    }
                 }
 
                 this.ProcessRenegotiate(in sslState);
@@ -810,6 +831,9 @@ namespace ThePlague.Networking.Tls
                 //ensure current renegotiation finishes
                 this.ProcessRenegotiate(ex);
 
+                //ensure shutdown finishes
+                this.ProcessShutdown(ex);
+
                 //rethrow
                 throw;
             }
@@ -853,10 +877,19 @@ namespace ThePlague.Networking.Tls
                 //get result to get possible exception
                 this.TraceLog("sync flush");
 
+                //get result to throw possible exceptions
+                _ = flushTask.Result;
+
                 if (bufferFlushed)
                 {
                     return flushTask;
                 }
+            }
+            catch (Exception ex)
+            {
+                this.ProcessRenegotiate(ex);
+                this.ProcessShutdown(ex);
+                throw;
             }
             finally
             {
@@ -886,6 +919,12 @@ namespace ThePlague.Networking.Tls
                     return flushResult;
                 }
             }
+            catch (Exception ex)
+            {
+                this.ProcessRenegotiate(ex);
+                this.ProcessShutdown(ex);
+                throw;
+            }
             finally
             {
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
@@ -899,11 +938,11 @@ namespace ThePlague.Networking.Tls
         #endregion
 
         #region renegotiate
-        private class RenegotiateAwaiter : IValueTaskSource<bool>
+        private class TlsPipeValueTaskAwaiter : IValueTaskSource<bool>
         {
             private ManualResetValueTaskSourceCore<bool> _core;
 
-            public RenegotiateAwaiter()
+            public TlsPipeValueTaskAwaiter()
             {
                 this._core = new ManualResetValueTaskSourceCore<bool>();
             }
@@ -932,7 +971,7 @@ namespace ThePlague.Networking.Tls
         public ValueTask<bool> RenegotiateAsync()
         {
             SslState sslState;
-            this._renegotiateWaiter = new RenegotiateAwaiter();
+            this._renegotiateWaiter = new TlsPipeValueTaskAwaiter();
             ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter, 0);
 
             this.TraceLog("renegotiating");
@@ -968,9 +1007,100 @@ namespace ThePlague.Networking.Tls
         }
         #endregion
 
+        #region Shutdown
+        //complete a shutdown request
+        private async ValueTask<ReadResult> ShutdownDuringReadAsync
+        (
+            bool bufferRead,
+            CancellationToken cancellationToken
+        )
+        {
+            SslState sslState;
+
+            while(!this.ShutdownInternal(out sslState))
+            {
+                if (sslState.WantsWrite())
+                {
+                    //keep these scoped
+                    TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    ValueTask<ReadResult> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
+                    {
+                        tcs.SetResult();
+                        return default;
+                    }
+
+                    ValueTask<ReadResult> readTask = this.WriteDuringOperation<ReadResult>
+                    (
+                        ReturnShutdownTask,
+                        bufferRead,
+                        cancellationToken
+                    );
+
+                    await tcs.Task;
+                }
+                //should never happen
+                else
+                {
+                    throw new InvalidOperationException($"{sslState} requested during shutdown");
+                }
+            }
+
+            throw new NotSupportedException($"{nameof(ShutdownDuringReadAsync)} should never return");
+        }
+
+        //throws an excpetion on success!
+        private bool ShutdownInternal(out SslState sslState)
+        {
+            bool succes = this._ssl.DoShutdown(out sslState);
+
+            if(succes)
+            {
+                this.TraceLog("shutdown during shutdown completed");
+
+                try
+                {
+                    ThrowTlsShutdown();
+                }
+                finally
+                {
+                    this._shutdownWaiter?.SetResult(true);
+                    this._shutdownWaiter = null;
+                }
+            }
+
+            return succes;
+        }
+
+        public ValueTask<bool> ShutdownAsync()
+        {
+            this._shutdownWaiter = new TlsPipeValueTaskAwaiter();
+            ValueTask<bool> shutdownTask = new ValueTask<bool>(this._shutdownWaiter, 0);
+
+            this.ShutdownInternal(out SslState sslState);
+
+            if (sslState.WantsWrite())
+            {
+                ValueTask<bool> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
+                    => shutdownTask;
+
+                this.TraceLog("write during shutdown requested");
+                return this.WriteDuringOperation(ReturnShutdownTask, true, CancellationToken.None);
+            }
+
+            if (sslState.WantsRead())
+            {
+                this.TraceLog("read during shutdown requested");
+            }
+
+            return shutdownTask;
+        }
+        #endregion
+
+        [DoesNotReturn]
         private static void ThrowPipeCompleted()
             => throw new InvalidOperationException("Pipe has been completed");
 
+        [DoesNotReturn]
         private static void ThrowTlsShutdown()
             => throw new TlsShutdownException();
 
@@ -982,9 +1112,16 @@ namespace ThePlague.Networking.Tls
 #endif
         }
 
+        public async ValueTask DisposeAsync()
+        {
+            await this.ShutdownAsync();
+
+            this.Dispose();
+        }
+
         public void Dispose()
         {
-            this._ssl.Dispose();
+            this._ssl?.Dispose();
 
             Interlocked.Exchange(ref this._writeAwaiter, null);
         }

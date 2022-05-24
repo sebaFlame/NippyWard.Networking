@@ -27,5 +27,11 @@ namespace ThePlague.Networking.Tls
         /// </summary>
         /// <returns>True when successfull or throws an <see cref="OpenSSL.Core.Error.OpenSslException"/></returns>
         ValueTask<bool> RenegotiateAsync();
+
+        /// <summary>
+        /// Shutdown the current TLS connection
+        /// </summary>
+        /// <returns>True when successfull or throws an <see cref="OpenSSL.Core.Error.OpenSslException"/></returns>
+        ValueTask<bool> ShutdownAsync();
     }
 }
