@@ -17,7 +17,7 @@ namespace ThePlague.Networking.Tls
     internal class TlsServerConnectionMiddleware
     {
         private readonly ConnectionDelegate _next;
-        private readonly ILogger _logger;
+        private readonly ILogger? _logger;
 
         //be aware that this will only get disposed by GC
         private readonly SslContext _sslContext;
@@ -26,7 +26,7 @@ namespace ThePlague.Networking.Tls
         (
             ConnectionDelegate next,
             SslOptions sslOptions,
-            ILogger logger
+            ILogger? logger = null
         )
         {
             this._next = next;
@@ -56,7 +56,7 @@ namespace ThePlague.Networking.Tls
                     context.Features.Set<ITlsConnectionFeature>(pipe);
                     context.Features.Set<ITlsHandshakeFeature>(pipe);
 
-                    this._logger.LogDebug($"[{context.ConnectionId}] Activating TLS transport");
+                    this._logger?.LogDebug($"[{context.ConnectionId}] Activating TLS transport");
                     await pipe.AuthenticateAsServerAsync
                     (
                         this._sslContext,
@@ -70,7 +70,7 @@ namespace ThePlague.Networking.Tls
             }
             finally
             {
-                this._logger.LogDebug($"[{context.ConnectionId}] Deactivating TLS transport");
+                this._logger?.LogDebug($"[{context.ConnectionId}] Deactivating TLS transport");
                 context.Transport = oldPipe;
             }
         }

@@ -85,7 +85,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
             SetRecommendedClientOptions(socket);
 
-            logger.TraceLog(name, $"connecting to {endpoint}");
+            logger?.TraceLog(name, $"connecting to {endpoint}");
 
             using(SocketAwaitableEventArgs args = new SocketAwaitableEventArgs
             (

@@ -155,7 +155,7 @@ namespace ThePlague.Networking.Transports.Sockets
                     sendPipeOptions: this._sendOptions,
                     receivePipeOptions: this._receiveOptions,
                     serverFeatureCollection: this._serverFeatureCollection,
-                    name: this._createName(),
+                    name: this._createName is null ? nameof(SocketServer) : this._createName(),
                     logger: this._logger
                 );
             }
@@ -193,10 +193,10 @@ namespace ThePlague.Networking.Transports.Sockets
             return default;
         }
 
-        [Conditional("TRACE")]
+        [Conditional("TRACELOG")]
         private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
         {
-#if TRACE
+#if TRACELOG
             this._logger?.TraceLog($"SocketServer ({this._endpoint})", message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
 #endif
         }

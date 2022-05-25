@@ -47,7 +47,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 sendPipeOptions: this._sendOptions,
                 receivePipeOptions: this._receiveOptions,
                 featureCollection: this._featureCollection,
-                name: this._createName(),
+                name: this._createName is null ? nameof(SocketConnectionContext) : this._createName(),
                 logger: this._logger
             );
     }

@@ -13,7 +13,7 @@ namespace ThePlague.Networking.Transports.Pipes
     /// <summary>
     /// Represents a multi-client socket-server capable of dispatching pipeline clients
     /// </summary>
-    internal class NamedPipeServer
+    public class NamedPipeServer
         : IConnectionListener,
             IDisposable
     {

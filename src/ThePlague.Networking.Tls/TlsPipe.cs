@@ -607,7 +607,7 @@ namespace ThePlague.Networking.Tls
             Task writeAwaitable;
             ValueTask<FlushResult> flushTask;
             SequencePosition readPosition;
-#if TRACE
+#if TRACELOG
             int count = 0;
 #endif
 
@@ -635,12 +635,13 @@ namespace ThePlague.Networking.Tls
 
                     //this is a bad idea!
                     Thread.SpinWait(1);
-#if TRACE
+#if TRACELOG
                     count++;
 #endif
                 }
-
+#if TRACELOG
                 this.TraceLog($"buffer {buffer.Length} spun for {count} cycles");
+#endif
 
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -1104,10 +1105,10 @@ namespace ThePlague.Networking.Tls
         private static void ThrowTlsShutdown()
             => throw new TlsShutdownException();
 
-        [Conditional("TRACE")]
+        [Conditional("TRACELOG")]
         private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
         {
-#if TRACE
+#if TRACELOG
             this._logger?.TraceLog(this._connectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
 #endif
         }

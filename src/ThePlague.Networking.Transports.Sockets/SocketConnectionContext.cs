@@ -586,10 +586,10 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly PipeOptions _receiveOptions, _sendOptions;
         private readonly ILogger _logger;
 
-        [Conditional("TRACE")]
+        [Conditional("TRACELOG")]
         private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
         {
-#if TRACE
+#if TRACELOG
             this._logger?.TraceLog(this.ConnectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
 #endif
         }

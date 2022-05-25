@@ -29,7 +29,7 @@ namespace ThePlague.Networking.Connections
             }
         }
 
-        [Conditional("TRACE")]
+        [Conditional("TRACELOG")]
         public static void TraceLog
         (
             this ILogger logger,
@@ -49,7 +49,7 @@ namespace ThePlague.Networking.Connections
             string caller
         )
         {
-#if TRACE
+#if TRACELOG
             logger.LogTrace($"[{Thread.CurrentThread.ManagedThreadId.ToString()}, {identifier}, {caller}] {message}");
 #endif
         }
