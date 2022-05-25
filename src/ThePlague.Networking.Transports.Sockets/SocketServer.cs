@@ -31,6 +31,7 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly IFeatureCollection _serverFeatureCollection;
         private readonly ILogger _logger;
         private readonly Func<string> _createName;
+        private readonly SocketAwaitableEventArgs _acceptEventArg;
 
         /// <summary>
         /// Create a new instance of a socket server
@@ -47,6 +48,7 @@ namespace ThePlague.Networking.Transports.Sockets
             this._createName = createName;
             this._logger = logger;
             this._serverFeatureCollection = serverFeatureCollection;
+            this._acceptEventArg = new SocketAwaitableEventArgs(PipeScheduler.ThreadPool, logger);
         }
 
         /// <summary>
@@ -140,7 +142,20 @@ namespace ThePlague.Networking.Transports.Sockets
 
             try
             {
-                Socket clientSocket = await this._listenerSocket.AcceptAsync();
+                SocketAwaitableEventArgs args = this._acceptEventArg;
+                Socket socket = this._listenerSocket;
+                Socket clientSocket;
+
+                ValueTask<Socket> socketTask = this._acceptEventArg.AcceptAsync(socket);
+
+                if(socketTask.IsCompletedSuccessfully)
+                {
+                    clientSocket = socketTask.Result;
+                }
+                else
+                {
+                    clientSocket = await socketTask;
+                }
 
                 this.TraceLog($"new connection: {clientSocket.RemoteEndPoint}");
 

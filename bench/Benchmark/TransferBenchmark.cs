@@ -36,9 +36,6 @@ namespace Benchmark
             (this._streamServer, this._streamClient) = await InitializeStream(_StreamListenerFactory, _StreamConnectionFactory, CreateIPEndPoint());
             this._streamServerDelegate = InitializeSendDelegate(_ServiceProvider, this.BufferSize, _Buffer);
             this._streamClientDelegate = InitializeReceiveDelegate(_ServiceProvider, _Buffer.Length);
-
-            //warm-up (there's still some unwanted allocations during the benchmark)
-            await this.LegacyServerTransfer();
         }
 
         [Benchmark(Baseline = true)]
@@ -70,9 +67,6 @@ namespace Benchmark
             (this._socketServer, this._socketClient) = await InitializeSocket(_SocketListenerFactory, _SocketConnectionFactory, CreateIPEndPoint());
             this._socketServerDelegate = InitializeSendDelegate(_ServiceProvider, this.BufferSize, _Buffer);
             this._socketClientDelegate = InitializeReceiveDelegate(_ServiceProvider, _Buffer.Length);
-
-            //warm-up (there's still some unwanted allocations during the benchmark)
-            await this.SocketServerTransfer();
         }
 
         [Benchmark]

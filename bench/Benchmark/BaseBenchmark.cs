@@ -40,8 +40,6 @@ namespace Benchmark
         internal const int _BufferSize = 1024 * 1024;
 
         protected static List<int> _UsedPorts;
-        protected static MemoryPool<byte> _Pool;
-        protected static PipeOptions _PipeOptions;
         protected static StreamPipeReaderOptions _StreamPipeReaderOptions;
         protected static StreamPipeWriterOptions _StreamPipeWriterOptions;
         protected static IServiceProvider _ServiceProvider;
@@ -49,16 +47,6 @@ namespace Benchmark
         protected static SocketConnectionContextFactory _SocketConnectionFactory;
         protected static StreamConnectionContextListenerFactory _StreamListenerFactory;
         protected static StreamConnectionContextFactory _StreamConnectionFactory;
-
-        private OpenSSL.Core.X509.X509Certificate _openSslCertificate;
-        private PrivateKey _openSslKey;
-        private X509Certificate2 _certificate;
-        private ConnectionContext _socketServerClient, _openSslServer, _streamServer, _legacySslServer,
-            _socketClientClient, _openSslClient, _streamClient, _legacySslClient;
-        private TaskCompletionSource _legacyClientTcs, _legacyServerTcs;
-        private ConnectionDelegate _legacyClientDelegate, _legacyServerDelegate;
-        private TaskCompletionSource _openSslClientTcs, _OpenSslServerTcs;
-        private ConnectionDelegate _openSslClientDelegate, _openSslServerDelegate;
 
         static BaseBenchmark()
         {
@@ -68,49 +56,69 @@ namespace Benchmark
             _UsedPorts = new List<int>();
 
             //pre-allocate pool
-            _Pool = MemoryPool<byte>.Shared;
+            MemoryPool<byte> pool = new ArrayMemoryPool<byte>();
             List<IMemoryOwner<byte>> rented = new List<IMemoryOwner<byte>>();
 
             //4 times buffer size should be enough
-            for (int i = 0; i < _BufferSize * 4; i += _MinimumSegmentSize)
+            for (int i = 0; i < _BufferSize * 5; i += _MinimumSegmentSize)
             {
-                rented.Add(_Pool.Rent(_MinimumSegmentSize));
+                if(i % 65536 == 0)
+                {
+                    rented.Add(pool.Rent(65536));
+                }
+                else
+                {
+                    rented.Add(pool.Rent(_MinimumSegmentSize));
+                }
             }
 
+            //return to pool
             foreach (IMemoryOwner<byte> m in rented)
             {
                 m.Dispose();
             }
 
-            //pipeoptions for direct send/receive without buffering
-            _PipeOptions = new PipeOptions
+            //receive (default) pipoptions with custom pool
+            PipeOptions receiveOptions = new PipeOptions
             (
+                pool: pool,
+                minimumSegmentSize: _MinimumSegmentSize,
+                useSynchronizationContext: false
+            );
+
+            //pipeoptions without send buffering (to emulate StreamPipeWriter more closely)
+            //pipeoptions with inline send (send inline when buffer conditions are correct)
+            PipeOptions sendOptions = new PipeOptions
+            (
+                pool: pool,
+                minimumSegmentSize: _MinimumSegmentSize,
+                useSynchronizationContext: false,
                 resumeWriterThreshold: 1,
                 pauseWriterThreshold: 1,
-                minimumSegmentSize: _MinimumSegmentSize,
-                pool: _Pool
+                writerScheduler: PipeScheduler.Inline,
+                readerScheduler: PipeScheduler.Inline
             );
 
             _StreamPipeWriterOptions = new StreamPipeWriterOptions
             (
-                pool: _Pool,
+                pool: pool,
                 minimumBufferSize: _MinimumSegmentSize
             );
             _StreamPipeReaderOptions = new StreamPipeReaderOptions
             (
-                pool: _Pool,
+                pool: pool,
                 useZeroByteReads: true
             );
 
             _SocketListenerFactory = new SocketConnectionContextListenerFactory
             (
-                sendOptions: _PipeOptions,
-                receiveOptions: _PipeOptions
+                sendOptions: sendOptions,
+                receiveOptions: receiveOptions
             );
             _SocketConnectionFactory = new SocketConnectionContextFactory
             (
-                sendOptions: _PipeOptions,
-                receiveOptions: _PipeOptions
+                sendOptions: sendOptions,
+                receiveOptions: receiveOptions
             );
 
             _StreamListenerFactory = new StreamConnectionContextListenerFactory
@@ -200,7 +208,7 @@ namespace Benchmark
         )
             => InitializeConnectionContext(listenerFactory, connectionFactory, endpoint);
 
-        //ensure bufferSize is a multiple of 1024
+        //ensure buffersize and buffer are incrementable with each other
         protected static ConnectionDelegate InitializeSendDelegate
         (
             IServiceProvider serviceProvider,

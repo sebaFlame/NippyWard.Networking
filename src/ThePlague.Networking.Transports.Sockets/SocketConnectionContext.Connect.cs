@@ -91,17 +91,17 @@ namespace ThePlague.Networking.Transports.Sockets
             (
                 (connectionOptions & SocketConnectionOptions.InlineConnect) == 0
                     ? PipeScheduler.ThreadPool
-                    : null
+                    : PipeScheduler.Inline,
+                logger
             ))
             {
                 args.RemoteEndPoint = endpoint;
 
-                if(!socket.ConnectAsync(args))
+                ValueTask connectTask = args.ConnectAsync(socket);
+                if(!connectTask.IsCompletedSuccessfully)
                 {
-                    args.Complete();
+                    await connectTask;
                 }
-
-                await args;
             }
 
             SocketConnectionContext connection = Create

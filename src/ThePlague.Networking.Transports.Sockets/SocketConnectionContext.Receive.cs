@@ -43,7 +43,8 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this._readerArgs = readerArgs = new SocketAwaitableEventArgs
                 (
-                    this.InlineReads ? null : this._receiveOptions.WriterScheduler
+                    this._receiveOptions.WriterScheduler,
+                    this._logger
                 );
 
                 while(true)
@@ -52,11 +53,14 @@ namespace ThePlague.Networking.Transports.Sockets
                     {
                         this.TraceLog($"awaiting zero-length receive...");
 
-                        DoReceive(socket, readerArgs, default);
+                        ValueTask<int> socketTask = DoReceive(socket, readerArgs, default);
 
-                        await readerArgs;
+                        if(!socketTask.IsCompletedSuccessfully)
+                        {
+                            await socketTask;
+                        }
 
-                        this.TraceLog($"zero-length receive complete; now {Socket.Available} bytes available");
+                        this.TraceLog($"zero-length receive complete; now {socket.Available} bytes available");
 
                         // this *could* be because data is now available, or it *could* be because of
                         // the EOF; we can't really trust Available, so now we need to do a non-empty
@@ -70,11 +74,19 @@ namespace ThePlague.Networking.Transports.Sockets
                     {
                         this.TraceLog($"initiating socket receive...");
 
-                        DoReceive(socket, readerArgs, buffer);
+                        int bytesReceived;
+                        ValueTask<int> socketTask = DoReceive(socket, readerArgs, buffer);
 
-                        this.TraceLog(_readerArgs.IsCompleted ? "receive is sync" : "receive is async");
+                        this.TraceLog(socketTask.IsCompletedSuccessfully ? "receive is sync" : "receive is async");
 
-                        int bytesReceived = await readerArgs;
+                        if(socketTask.IsCompletedSuccessfully)
+                        {
+                            bytesReceived = socketTask.Result;
+                        }
+                        else
+                        {
+                            bytesReceived = await socketTask;
+                        }
 
                         this.LastReceived = bytesReceived;
 
@@ -253,15 +265,12 @@ namespace ThePlague.Networking.Transports.Sockets
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
-        private static void DoReceive(Socket socket, SocketAwaitableEventArgs args, Memory<byte> buffer)
+        private static ValueTask<int> DoReceive(Socket socket, SocketAwaitableEventArgs args, Memory<byte> buffer)
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
             args.SetBuffer(buffer);
 
-            if(!socket.ReceiveAsync(args))
-            {
-                args.Complete();
-            }
+            return args.ReceiveAsync(socket);
         }
     }
 }

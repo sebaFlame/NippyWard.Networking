@@ -5,146 +5,357 @@ using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Tasks.Sources;
+
+using ThePlague.Networking.Connections;
+
+using Microsoft.Extensions.Logging;
+
+#nullable enable
 
 namespace ThePlague.Networking.Transports.Sockets
 {
-    // This type is largely similar to the type of the same name in KestrelHttpServer, with some minor tweaks:
-    // - when scheduing a callback against an already complete task (semi-synchronous case), prefer to use the io pipe scheduler for onward continuations, not the thread pool
-    // - when invoking final continuations, we detect the Inline pipe scheduler and bypass the indirection
-    // - the addition of an Abort concept (which invokes any pending continuations, guaranteeing failure)
-
+    //based on 
+    //https://github.com/dotnet/aspnetcore/blob/77042af34bde9103b865c6f9a2baa99adc23e6b3/src/Servers/Kestrel/Transport.Sockets/src/Internal/SocketAwaitableEventArgs.cs
+    //and AwaitableSocketAsyncEventArgs in
+    //https://github.com/dotnet/runtime/blob/2a394578fb13cb143779229e101667ec925a2eed/src/libraries/System.Net.Sockets/src/System/Net/Sockets/Socket.Tasks.cs
     /// <summary>
     /// Awaitable SocketAsyncEventArgs, where awaiting the args yields either the BytesTransferred or throws the relevant socket exception
     /// </summary>
-    public class SocketAwaitableEventArgs : SocketAsyncEventArgs, ICriticalNotifyCompletion
+    public class SocketAwaitableEventArgs : SocketAsyncEventArgs, IValueTaskSource, IValueTaskSource<int>, IValueTaskSource<Socket>
     {
-        /// <summary>
-        /// Abort the current async operation (and prevent future operations)
-        /// </summary>
-        public void Abort(SocketError error = SocketError.OperationAborted)
-        {
-            if(error == SocketError.Success)
-            {
-                throw new ArgumentException(nameof(error));
-            }
-
-            this._forcedError = error;
-            this.OnCompleted(this);
-        }
-
-        private volatile SocketError _forcedError; // Success = 0, no field init required
-
-        private static readonly Action _CallbackCompleted = () => { };
-
+        private readonly ILogger? _logger;
         private readonly PipeScheduler _ioScheduler;
+        private Action<object?>? _continuation;
+        private short _token;
+        private ExecutionContext? _executionContext;
+        private object? _scheduler;
 
-        private Action _callback;
-
-        internal static readonly Action<object> _InvokeStateAsAction = state => ((Action)state)();
-
-        private readonly bool _isWrite;
+        private static readonly Action<object?> _ContinuationCompleted = _ => { };
 
         /// <summary>
         /// Create a new SocketAwaitableEventArgs instance, optionally providing a scheduler for callbacks
         /// </summary>
         /// <param name="ioScheduler"></param>
-        public SocketAwaitableEventArgs(PipeScheduler ioScheduler = null)
+        public SocketAwaitableEventArgs(PipeScheduler ioScheduler, ILogger? logger)
+            : base(unsafeSuppressExecutionContextFlow: true)
         {
-            // treat null and Inline interchangeably
-            if(ioScheduler == PipeScheduler.Inline)
-            {
-                ioScheduler = null;
-            }
-
             this._ioScheduler = ioScheduler;
+            this._logger = logger;
         }
 
-        /// <summary>
-        /// Get the awaiter for this instance; used as part of "await"
-        /// </summary>
-        public SocketAwaitableEventArgs GetAwaiter() => this;
-
-        /// <summary>
-        /// Indicates whether the current operation is complete; used as part of "await"
-        /// </summary>
-        public bool IsCompleted => ReferenceEquals(this._callback, _CallbackCompleted);
-
-        /// <summary>
-        /// Gets the result of the async operation is complete; used as part of "await"
-        /// </summary>
-        public int GetResult()
+        #region IValueTaskSource implementeation
+        //ensure it does not stay on the IO thread!
+        //when oncompleted gets called, executioncontext/synchronizationcontext should already
+        //be restored
+        protected override void OnCompleted(SocketAsyncEventArgs _)
         {
-            Debug.Assert(ReferenceEquals(this._callback, _CallbackCompleted));
+            Action<object?>? c = this._continuation;
 
-            this._callback = null;
-
-            if(this._forcedError != SocketError.Success)
+            if (c != null
+                || (c = Interlocked.CompareExchange(ref this._continuation, _ContinuationCompleted, null)) != null)
             {
-                ThrowSocketException(this._forcedError);
-            }
+                object? continuationState = this.UserToken;
+                this.UserToken = null;
+                this._continuation = _ContinuationCompleted; // in case someone's polling IsCompleted
 
-            if (this.SocketError != SocketError.Success)
-            {
-                ThrowSocketException(this.SocketError);
-            }
-
-            return this.BytesTransferred;
-
-            static void ThrowSocketException(SocketError e)
-                => throw new SocketException((int)e);
-        }
-
-        /// <summary>
-        /// Schedules a continuation for this operation; used as part of "await"
-        /// </summary>
-        public void OnCompleted(Action continuation)
-        {
-            if(ReferenceEquals(Volatile.Read(ref this._callback), _CallbackCompleted)
-                || ReferenceEquals(Interlocked.CompareExchange(ref this._callback, continuation, null), _CallbackCompleted))
-            {
-                // this is the rare "kinda already complete" case; push to worker to prevent possible stack dive,
-                // but prefer the custom scheduler when possible
-                if(this._ioScheduler == null)
-                {
-                    Task.Run(continuation);
-                }
-                else
-                {
-                    this._ioScheduler.Schedule(_InvokeStateAsAction, continuation);
-                }
+                _ioScheduler.Schedule(c, continuationState);
             }
         }
 
-        /// <summary>
-        /// Schedules a continuation for this operation; used as part of "await"
-        /// </summary>
-        public void UnsafeOnCompleted(Action continuation)
-            => this.OnCompleted(continuation);
+        //scrap this, SocketAsyncEventArgs should save executioncontext/synchronizationcontext
+        //protected override void OnCompleted(SocketAsyncEventArgs _)
+        //{
+        //    // When the operation completes, see if OnCompleted was already called to hook up a continuation.
+        //    // If it was, invoke the continuation.
+        //    Action<object?>? c = this._continuation;
+        //    if (c != null
+        //        || (c = Interlocked.CompareExchange(ref _continuation, _ContinuationCompleted, null)) != null)
+        //    {
+        //        Debug.Assert(c != _ContinuationCompleted, "The delegate should not have been the completed sentinel.");
 
-        /// <summary>
-        /// Marks the operation as complete - this should be invoked whenever a SocketAsyncEventArgs operation returns false
-        /// </summary>
-        public void Complete()
-            => this.OnCompleted(this);
+        //        object? continuationState = this.UserToken;
+        //        this.UserToken = null;
+        //        this._continuation = _ContinuationCompleted; // in case someone's polling IsCompleted
 
-        /// <summary>
-        /// Invoked automatically when an operation completes asynchronously
-        /// </summary>
-        protected override void OnCompleted(SocketAsyncEventArgs e)
+        //        ExecutionContext? ec = this._executionContext;
+        //        if (ec is null)
+        //        {
+        //            this.InvokeContinuation(c, continuationState, forceAsync: false, requiresExecutionContextFlow: false);
+        //        }
+        //        else
+        //        {
+        //            // This case should be relatively rare, as the async Task/ValueTask method builders
+        //            // use the awaiter's UnsafeOnCompleted, so this will only happen with code that
+        //            // explicitly uses the awaiter's OnCompleted instead.
+        //            _executionContext = null;
+        //            ExecutionContext.Run(ec, runState =>
+        //            {
+        //                (SocketAwaitableEventArgs, Action<object?>, object) t = ((SocketAwaitableEventArgs, Action<object?>, object))runState!;
+        //                t.Item1.InvokeContinuation(t.Item2, t.Item3, forceAsync: false, requiresExecutionContextFlow: false);
+        //            }, (this, c, continuationState));
+        //        }
+        //    }
+        //}
+
+        public int GetResult(short token)
         {
-            Action continuation = Interlocked.Exchange(ref this._callback, _CallbackCompleted);
+            int bytes = this.BytesTransferred;
+            SocketError error = this.SocketError;
 
-            if(continuation != null)
+            this.Release();
+
+            if(error != SocketError.Success)
             {
-                if(this._ioScheduler == null)
+                CreateException(this.SocketError);
+            }
+
+            return bytes;
+        }
+
+        void IValueTaskSource.GetResult(short token)
+            => this.GetResult(token);
+
+        Socket IValueTaskSource<Socket>.GetResult(short token)
+        {
+            Socket socket = this.AcceptSocket!;
+            SocketError error = this.SocketError;
+
+            this.Release();
+
+            if (error != SocketError.Success)
+            {
+                CreateException(this.SocketError);
+            }
+
+            return socket;
+        }
+
+        protected static SocketException CreateException(SocketError e)
+        {
+            return new SocketException((int)e);
+        }
+
+        public ValueTaskSourceStatus GetStatus(short token)
+        {
+            Action<object?>? c = this._continuation;
+            SocketError socketError = this.SocketError;
+
+            return !ReferenceEquals(c, _ContinuationCompleted) ? ValueTaskSourceStatus.Pending :
+                    socketError == SocketError.Success ? ValueTaskSourceStatus.Succeeded :
+                    ValueTaskSourceStatus.Faulted;
+        }
+
+        public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
+        {
+            this.UserToken = state;
+            Action<object?>? prevContinuation = Interlocked.CompareExchange(ref _continuation, continuation, null);
+
+            if (ReferenceEquals(prevContinuation, _ContinuationCompleted))
+            {
+                this.UserToken = null;
+
+                ThreadPool.UnsafeQueueUserWorkItem(continuation, state, preferLocal: true);
+            }
+        }
+
+        //scrap this, SocketAsyncEventArgs should save executioncontext/synchronizationcontext
+        //public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
+        //{
+        //    if (token != _token)
+        //    {
+        //        throw new InvalidOperationException("incorrect token");
+        //    }
+
+        //    if ((flags & ValueTaskSourceOnCompletedFlags.FlowExecutionContext) != 0)
+        //    {
+        //        this._executionContext = ExecutionContext.Capture();
+        //    }
+
+        //    if ((flags & ValueTaskSourceOnCompletedFlags.UseSchedulingContext) != 0)
+        //    {
+        //        SynchronizationContext? sc = SynchronizationContext.Current;
+        //        if (sc != null && sc.GetType() != typeof(SynchronizationContext))
+        //        {
+        //            this._scheduler = sc;
+        //        }
+        //        else
+        //        {
+        //            TaskScheduler ts = TaskScheduler.Current;
+        //            if (ts != TaskScheduler.Default)
+        //            {
+        //                this._scheduler = ts;
+        //            }
+        //        }
+        //    }
+
+        //    this.UserToken = state; // Use UserToken to carry the continuation state around
+        //    Action<object>? prevContinuation = Interlocked.CompareExchange(ref _continuation, continuation, null);
+        //    if (ReferenceEquals(prevContinuation, _ContinuationCompleted))
+        //    {
+        //        // Lost the race condition and the operation has now already completed.
+        //        // We need to invoke the continuation, but it must be asynchronously to
+        //        // avoid a stack dive.  However, since all of the queueing mechanisms flow
+        //        // ExecutionContext, and since we're still in the same context where we
+        //        // captured it, we can just ignore the one we captured.
+        //        bool requiresExecutionContextFlow = this._executionContext != null;
+        //        this._executionContext = null;
+        //        this.UserToken = null; // we have the state in "state"; no need for the one in UserToken
+        //        this.InvokeContinuation(continuation, state, forceAsync: true, requiresExecutionContextFlow);
+        //    }
+        //    else if (prevContinuation != null)
+        //    {
+        //        // Flag errors with the continuation being hooked up multiple times.
+        //        // This is purely to help alert a developer to a bug they need to fix.
+        //        throw new InvalidOperationException("Multiple continuations");
+        //    }
+        //}
+
+        //private void InvokeContinuation(Action<object?> continuation, object? state, bool forceAsync, bool requiresExecutionContextFlow)
+        //{
+        //    object? scheduler = this._scheduler;
+        //    this._scheduler = null;
+
+        //    if (scheduler != null)
+        //    {
+        //        if (scheduler is SynchronizationContext sc)
+        //        {
+        //            sc.Post(s =>
+        //            {
+        //                (Action<object>, object) t = ((Action<object>, object))s!;
+        //                t.Item1(t.Item2);
+        //            }, (continuation, state));
+        //        }
+        //        else
+        //        {
+        //            Debug.Assert(scheduler is TaskScheduler, $"Expected TaskScheduler, got {scheduler}");
+        //            Task.Factory.StartNew(continuation, state, CancellationToken.None, TaskCreationOptions.DenyChildAttach, (TaskScheduler)scheduler);
+        //        }
+        //    }
+        //    else if (forceAsync)
+        //    {
+        //        if (requiresExecutionContextFlow)
+        //        {
+        //            ThreadPool.QueueUserWorkItem(continuation, state, preferLocal: true);
+        //        }
+        //        else
+        //        {
+        //            ThreadPool.UnsafeQueueUserWorkItem(continuation, state, preferLocal: true);
+        //        }
+        //    }
+        //    else
+        //    {
+        //        continuation(state);
+        //    }
+        //}
+        #endregion
+
+        #region Custom socket implementation
+        private void Release()
+        {
+            this._token++;
+            this._continuation = null;
+        }
+
+        public ValueTask<Socket> AcceptAsync(Socket socket)
+        {
+            Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
+
+            if (socket.AcceptAsync(this))
+            {
+                return new ValueTask<Socket>(this, _token);
+            }
+
+            Socket acceptSocket = this.AcceptSocket!;
+            SocketError error = this.SocketError;
+
+            this.AcceptSocket = null;
+
+            this.Release();
+
+            return error == SocketError.Success ?
+                new ValueTask<Socket>(acceptSocket) :
+                ValueTask.FromException<Socket>(CreateException(error));
+        }
+
+        public ValueTask<int> ReceiveAsync(Socket socket)
+        {
+            Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
+
+            if(socket.ReceiveAsync(this))
+            {
+                return new ValueTask<int>(this, this._token);
+            }
+
+            int bytesTransferred = this.BytesTransferred;
+            SocketError error = this.SocketError;
+
+            this.Release();
+
+            return error == SocketError.Success ?
+                new ValueTask<int>(bytesTransferred) :
+                ValueTask.FromException<int>(CreateException(error));
+        }
+
+        public ValueTask<int> SendAsync(Socket socket)
+        {
+            Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
+
+            if (socket.SendAsync(this))
+            {
+                return new ValueTask<int>(this, this._token);
+            }
+
+            int bytesTransferred = this.BytesTransferred;
+            SocketError error = this.SocketError;
+
+            this.Release();
+
+            return error == SocketError.Success ?
+                new ValueTask<int>(bytesTransferred) :
+                ValueTask.FromException<int>(CreateException(error));
+        }
+
+        public ValueTask ConnectAsync(Socket socket)
+        {
+            Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
+
+            try
+            {
+                if (socket.ConnectAsync(this))
                 {
-                    continuation.Invoke();
-                }
-                else
-                {
-                    this._ioScheduler.Schedule(_InvokeStateAsAction, continuation);
+                    return new ValueTask(this, _token);
                 }
             }
+            catch
+            {
+                this.Release();
+                throw;
+            }
+
+            SocketError error = this.SocketError;
+
+            this.Release();
+
+            return error == SocketError.Success ?
+                default :
+                ValueTask.FromException(CreateException(error));
+        }
+        #endregion
+
+        /// <summary>
+        /// Abort the current async operation (and prevent future operations)
+        /// </summary>
+        public void Abort(SocketError error = SocketError.OperationAborted)
+        {
+            if (error == SocketError.Success)
+            {
+                throw new ArgumentException(nameof(error));
+            }
+
+            this.SocketError = error;
+
+            this.Dispose();
         }
     }
 }

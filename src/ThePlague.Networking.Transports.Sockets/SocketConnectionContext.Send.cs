@@ -41,7 +41,8 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this._writerArgs = writerArgs = new SocketAwaitableEventArgs
                 (
-                    this.InlineWrites ? null : this._sendOptions.ReaderScheduler
+                    this._sendOptions.ReaderScheduler,
+                    this._logger
                 );
 
                 while(true)
@@ -78,14 +79,30 @@ namespace ThePlague.Networking.Transports.Sockets
 
                     try
                     {
+                        ValueTask<int> socketTask;
+                        int bytesSent;
+
                         if(!buffer.IsEmpty)
                         {
                             this.TraceLog($"sending {buffer.Length} bytes over socket...");
-                            DoSend(socket, writerArgs, buffer, ref this._spareBuffer);
+
+                            socketTask = DoSend(socket, writerArgs, buffer, ref this._spareBuffer);
+
+                            this.TraceLog(socketTask.IsCompletedSuccessfully ? "send is sync" : "send is async");
+
+                            if (socketTask.IsCompletedSuccessfully)
+                            {
+                                bytesSent = socketTask.Result;
+                            }
+                            else
+                            {
+                                bytesSent = await socketTask;
+                            }
+
                             Interlocked.Add
                             (
                                 ref this._totalBytesSent,
-                                await writerArgs
+                                bytesSent
                             );
                         }
                         else if(result.IsCompleted)
@@ -206,12 +223,17 @@ namespace ThePlague.Networking.Transports.Sockets
             //return error;
         }
 
-        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)
+        private static ValueTask<int> DoSend
+        (
+            Socket socket,
+            SocketAwaitableEventArgs args,
+            in ReadOnlySequence<byte> buffer,
+            ref List<ArraySegment<byte>> spareBuffer
+        )
         {
             if (buffer.IsSingleSegment)
             {
-                DoSend(socket, args, buffer.First, ref spareBuffer);
-                return;
+                return DoSend(socket, args, buffer.First, ref spareBuffer);
             }
 
             //ensure buffer is null
@@ -224,24 +246,24 @@ namespace ThePlague.Networking.Transports.Sockets
             IList<ArraySegment<byte>> bufferList = GetBufferList(args, buffer, ref spareBuffer);
             args.BufferList = bufferList;
 
-            if(!socket.SendAsync(args))
-            {
-                args.Complete();
-            }
+            return args.SendAsync(socket);
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
-        private static void DoSend(Socket socket, SocketAwaitableEventArgs args, ReadOnlyMemory<byte> memory, ref List<ArraySegment<byte>> spareBuffer)
+        private static ValueTask<int> DoSend
+        (
+            Socket socket,
+            SocketAwaitableEventArgs args,
+            ReadOnlyMemory<byte> memory,
+            ref List<ArraySegment<byte>> spareBuffer
+        )
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
             RecycleSpareBuffer(args, ref spareBuffer);
 
             args.SetBuffer(MemoryMarshal.AsMemory(memory));
 
-            if(!socket.SendAsync(args))
-            {
-                args.Complete();
-            }
+            return args.SendAsync(socket);
         }
 
         private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)
