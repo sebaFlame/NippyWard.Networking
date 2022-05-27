@@ -20,13 +20,14 @@ using BenchmarkDotNet.Configs;
 using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using OpenSSL.Core;
 using OpenSSL.Core.Keys;
 using OpenSSL.Core.SSL;
 using OpenSSL.Core.SSL.Buffer;
 using OpenSSL.Core.ASN1;
-using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Tls;
 using Benchmark.LegacySsl;
@@ -51,6 +52,12 @@ namespace Benchmark
         static BaseBenchmark()
         {
             _ServiceProvider = new ServiceCollection()
+                .AddLogging
+                (
+                    (builder) => builder
+                        .SetMinimumLevel(LogLevel.Trace)
+                        .AddProvider(new FileLoggerProvider(LogWriter.Instance))
+                )
                 .BuildServiceProvider();
 
             _UsedPorts = new List<int>();

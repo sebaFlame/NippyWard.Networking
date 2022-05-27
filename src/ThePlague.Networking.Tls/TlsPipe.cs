@@ -15,7 +15,7 @@ using OpenSSL.Core.SSL;
 using OpenSSL.Core.SSL.Buffer;
 using OpenSSL.Core.X509;
 
-using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 using System.Diagnostics.CodeAnalysis;
 
 namespace ThePlague.Networking.Tls
@@ -86,6 +86,8 @@ namespace ThePlague.Networking.Tls
         }
 
         #region authentication
+        //TODO: when PipeScheduler.ThreadPool, resumeWriterThreshold and pauseWriterThreshold are enabled
+        //how to guarantee a send?
         private async Task Authenticate
         (
             Ssl ssl,
@@ -96,6 +98,8 @@ namespace ThePlague.Networking.Tls
         )
         {
             SslState sslState = default;
+            ValueTask<ReadResult> readTask;
+            ValueTask<FlushResult> flushTask;
             ReadResult readResult;
             FlushResult flushResult;
             ReadOnlySequence<byte> buffer;
@@ -103,82 +107,121 @@ namespace ThePlague.Networking.Tls
 
             this.TraceLog($"authenticating TLS as {(ssl.IsServer ? "server" : "client")}");
 
-            while (sslState.WantsRead()
-                || sslState.WantsWrite()
-                || !ssl.DoHandshake(out sslState))
+            while (!ssl.DoHandshake(out sslState))
             {
-                if (sslState.WantsWrite())
+                this.TraceLog($"authenticating state of {sslState} for {(ssl.IsServer ? "server" : "client")}");
+
+                do
                 {
-                    //get a buffer from the ssl object
-                    sslState = ssl.WriteSsl
-                    (
-                        ReadOnlySpan<byte>.Empty,
-                        pipeWriter,
-                        out _
-                    );
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    //flush to the other side
-                    flushResult = await pipeWriter.FlushAsync(cancellationToken);
-
-                    if (flushResult.IsCanceled)
+                    if (sslState.WantsWrite())
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                    else if (flushResult.IsCompleted)
-                    {
-                        //if handshake not completed, throw exception
-                        if (!ssl.DoHandshake(out sslState))
+                        //get a buffer from the ssl object
+                        sslState = ssl.WriteSsl
+                        (
+                            ReadOnlySequence<byte>.Empty,
+                            pipeWriter,
+                            out _
+                        );
+
+                        this.TraceLog($"authenticating write of {pipeWriter.UnflushedBytes} for {(ssl.IsServer ? "server" : "client")}");
+
+                        if (pipeWriter.UnflushedBytes == 0)
                         {
-                            ThrowPipeCompleted();
+                            break;
                         }
 
-                        this.TraceLog($"pipe writer completed during handshake with state {sslState}");
+                        //flush to the other side
+                        flushTask = pipeWriter.FlushAsync(cancellationToken);
 
-                        //user data might have been received, leave further processing to consumer
-                        break;
-                    }
-                }
-                    
-                if (sslState.WantsRead())
-                {
-                    //get a buffer from the other side
-                    readResult = await pipeReader.ReadAsync(cancellationToken);
-
-                    buffer = readResult.Buffer;
-
-                    //read the received data into the ssl object
-                    //and read possible application data into decryptedReadBuffer
-                    sslState = ssl.ReadSsl
-                    (
-                        buffer,
-                        decryptedReadBuffer,
-                        out read
-                    );
-
-                    pipeReader.AdvanceTo(read);
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    if (readResult.IsCanceled)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                    }
-                    else if (readResult.IsCompleted)
-                    {
-                        //if handshake not completed, throw exception
-                        if (!ssl.DoHandshake(out sslState))
+                        if (flushTask.IsCompletedSuccessfully)
                         {
-                            ThrowPipeCompleted();
+                            flushResult = flushTask.Result;
+                        }
+                        else
+                        {
+                            flushResult = await flushTask;
                         }
 
-                        this.TraceLog($"pipe reader completed during handshake with state {sslState}");
+                        if (flushResult.IsCanceled)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
+                        else if (flushResult.IsCompleted)
+                        {
+                            //if handshake not completed, throw exception
+                            if (!ssl.DoHandshake(out sslState))
+                            {
+                                ThrowPipeCompleted();
+                            }
 
-                        //user data might have been received, leave further processing to consumer
-                        break;
+                            this.TraceLog($"pipe writer completed during handshake with state {sslState}");
+
+                            //user data might have been received, leave further processing to consumer
+                            break;
+                        }
+
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        //completed, run DoHandshake
+                        if (sslState.HandshakeCompleted())
+                        {
+                            break;
+                        }
                     }
-                }
+
+                    if (sslState.WantsRead())
+                    {
+                        //completed, run DoHandshake
+                        if (sslState.HandshakeCompleted())
+                        {
+                            break;
+                        }
+
+                        //get a buffer from the other side
+                        readTask = pipeReader.ReadAsync(cancellationToken);
+
+                        if (readTask.IsCompletedSuccessfully)
+                        {
+                            readResult = readTask.Result;
+                        }
+                        else
+                        {
+                            readResult = await readTask;
+                        }
+
+                        buffer = readResult.Buffer;
+
+                        this.TraceLog($"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
+
+                        sslState = ssl.ReadSsl
+                        (
+                            buffer,
+                            decryptedReadBuffer,
+                            out read
+                        );
+
+                        pipeReader.AdvanceTo(read);
+
+                        if (readResult.IsCanceled)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
+                        else if (readResult.IsCompleted)
+                        {
+                            //if handshake not completed, throw exception
+                            if (!ssl.DoHandshake(out sslState))
+                            {
+                                ThrowPipeCompleted();
+                            }
+
+                            this.TraceLog($"pipe reader completed during handshake with state {sslState}");
+
+                            //user data might have been received, leave further processing to consumer
+                            break;
+                        }
+                    }
+                } while (sslState.WantsRead()
+                    || sslState.WantsWrite());
             }
 
             this.TraceLog("authenticated TLS");
@@ -311,10 +354,10 @@ namespace ThePlague.Networking.Tls
                 );
             }
 
+            //TODO: stack overflow
             if (sslState.WantsRead())
             {
                 this.TraceLog("read during read requested");
-                //TODO: possible stack overflow?
                 return this.ReadAsync(cancellationToken);
             }
 
@@ -851,9 +894,6 @@ namespace ThePlague.Networking.Tls
             }
 
             return true;
-
-            static ValueTask<FlushResult> ReturnFlushResult(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
-                => new ValueTask<FlushResult>(flushResult);
         }
 
         private ValueTask<FlushResult> ProcessFlushResult

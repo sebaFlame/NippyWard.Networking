@@ -27,7 +27,7 @@ namespace Benchmark
             this._legacyClientDelegate = InitializeClientLegasySslDelegate(_ServiceProvider, _LegacySslProtocl);
             this._legacyServerDelegate = InitializeServerLegasySslDelegate(_ServiceProvider, _certificate, _LegacySslProtocl);
         }
-
+        
         [Benchmark(Baseline = true)]
         public async Task LegacySslHandshake()
         {
@@ -68,15 +68,11 @@ namespace Benchmark
         [Benchmark]
         public async Task OpenSslHandshake()
         {
-            await this.OpenSslSetup();
-
             //when both tasks have finished, tls has been disposed
             Task server = this._openSslServerDelegate!(this._openSslServer!);
             Task client = this._openSslClientDelegate!(this._openSslClient!);
 
             await Task.WhenAll(server, client);
-
-            await this.OpenSslCleanup();
         }
 
         [GlobalCleanup(Target = nameof(OpenSslHandshake))]

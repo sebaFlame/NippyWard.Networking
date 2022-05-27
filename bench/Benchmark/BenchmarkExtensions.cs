@@ -5,12 +5,13 @@ using System.Net;
 using System.Text;
 using System.Net.Sockets;
 
-using ThePlague.Networking.Connections;
-using Benchmark.LegacySsl;
-
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+
+using ThePlague.Networking.Connections;
+using Benchmark.LegacySsl;
+using ThePlague.Networking.Logging;
 
 namespace Benchmark
 {

@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Logging;
 
+using ThePlague.Networking.Logging;
+
 #nullable enable
 
 namespace ThePlague.Networking.Connections

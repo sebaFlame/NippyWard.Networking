@@ -15,5 +15,6 @@
     <ItemGroup>
       <ProjectReference Include="..\ThePlague.Networking.Pipelines\ThePlague.Networking.Pipelines.csproj" />
       <ProjectReference Include="..\ThePlague.Networking.Connections\ThePlague.Networking.Connections.csproj" />
+      <ProjectReference Include="..\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
     </ItemGroup>
 </Project>

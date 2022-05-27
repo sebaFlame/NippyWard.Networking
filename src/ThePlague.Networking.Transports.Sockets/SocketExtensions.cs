@@ -5,7 +5,9 @@ using System.Net.Sockets;
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
+
 using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 
 #nullable enable
 

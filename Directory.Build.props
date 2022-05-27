@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">  
-  <PropertyGroup>
-	  <!-- Make it possible to disable trace -->
-    <DefineConstants>TRACELOG</DefineConstants>
-  </PropertyGroup>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+	<PropertyGroup>
+		<TraceLog Condition="'$(TraceLog)' == ''">true</TraceLog>
+		<LogByDate Condition="'$(LogByDate)' == ''">false</LogByDate>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<DefineConstants Condition="'$(LogByDate)' == 'true'">$(DefineConstants);LOGBYDATE</DefineConstants>
+		<DefineConstants Condition="'$(TraceLog)' == 'true'">$(DefineConstants);TRACELOG</DefineConstants>
+	</PropertyGroup>
 </Project>

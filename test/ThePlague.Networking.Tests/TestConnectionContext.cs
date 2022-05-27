@@ -4,15 +4,16 @@ using System.IO.Pipelines;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-
-using ThePlague.Networking.Connections;
+using System.Net;
+using System.Threading;
+using System.Net.Sockets;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
-using System.Net;
-using System.Threading;
-using System.Net.Sockets;
+
+using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Tests
 {

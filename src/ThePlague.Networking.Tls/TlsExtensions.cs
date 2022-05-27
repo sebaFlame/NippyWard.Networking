@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 
-using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 using OpenSSL.Core.SSL;
 using OpenSSL.Core.X509;
 using OpenSSL.Core.Keys;

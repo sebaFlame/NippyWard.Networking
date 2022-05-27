@@ -8,9 +8,7 @@ using System.Diagnostics;
 
 using Microsoft.Extensions.Logging;
 
-#nullable enable
-
-namespace ThePlague.Networking.Connections
+namespace ThePlague.Networking.Logging
 {
     public static class LoggerExtensions
     {
@@ -28,6 +26,9 @@ namespace ThePlague.Networking.Connections
                 
             }
         }
+
+        public static ILoggingBuilder AddFileLogger(this ILoggingBuilder loggingBuilder, string logFilePath, bool logByDate = false)
+            => loggingBuilder.AddProvider(new FileLoggerProvider(new LogWriter(logFilePath, logByDate)));
 
         [Conditional("TRACELOG")]
         public static void TraceLog

@@ -10,11 +10,11 @@ namespace Benchmark
     public static class Program
     {
         public static void Main(string[] args)
-            => BenchmarkRunner.Run //<TransferBenchmark>
+            => BenchmarkRunner.Run //<HandshakeBenchmark>
             (
                 typeof(Program).Assembly,
 #if DEBUG
-                new DebugInProcessConfig()
+                new DebugBuildConfig()
 #else
                 DefaultConfig.Instance
 #endif

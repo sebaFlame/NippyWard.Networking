@@ -8,15 +8,16 @@ using System.Buffers;
 using System.Security.Cryptography;
 using System.Collections.Generic;
 
-using Xunit;
-using Xunit.Abstractions;
 using Microsoft.AspNetCore.Connections;
-using System.IO.Pipelines;
 using Microsoft.Extensions.Logging;
+using System.IO.Pipelines;
+using Xunit;
+using Xunit.Sdk;
+using Xunit.Abstractions;
 
 using ThePlague.Networking.Connections;
 using ThePlague.Networking.Transports.Sockets;
-using Xunit.Sdk;
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Tests
 {

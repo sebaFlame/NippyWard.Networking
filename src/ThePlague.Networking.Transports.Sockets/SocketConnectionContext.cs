@@ -13,7 +13,7 @@ using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 
-using ThePlague.Networking.Connections;
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -92,10 +92,6 @@ namespace ThePlague.Networking.Transports.Sockets
         private long _previousTotalBytesReceived;
         private long _receiveSpeedInBytes;
         private long _sendSpeedInBytes;
-
-        //receive and send "thread"
-        private static readonly Action<object> _DoReceiveAsync = DoReceiveAsync;
-        private static readonly Action<object> _DoSendAsync = DoSendAsync;
 
         private static readonly System.Timers.Timer _BandwidthTimer;
 
@@ -178,8 +174,12 @@ namespace ThePlague.Networking.Transports.Sockets
 
             _BandwidthTimer.Elapsed += this.OnBandwidthEvent;
 
-            sendPipeOptions.ReaderScheduler.Schedule(_DoSendAsync, this);
-            receivePipeOptions.ReaderScheduler.Schedule(_DoReceiveAsync, this);
+            //initialize receive/send thread
+            //ensure these are on a threadpool thread
+            //the _sendOptions and _receiveOptions are random and can be inline!
+            //this ensures all code gets executed on a thread and NOT in this constructor
+            ThreadPool.UnsafeQueueUserWorkItem<SocketConnectionContext>(DoReceiveAsync, this, false);
+            ThreadPool.UnsafeQueueUserWorkItem<SocketConnectionContext>(DoSendAsync, this, false);
         }
 
         ~SocketConnectionContext()
@@ -571,16 +571,14 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        private static void DoReceiveAsync(object s)
+        private static void DoReceiveAsync(SocketConnectionContext ctx)
         {
-            SocketConnectionContext ctx = (SocketConnectionContext)s;
-            ctx._receiveTask = ctx.DoReceiveAsync();
+            ctx._receiveTask = Task.Factory.StartNew(ctx.DoReceiveAsync);
         }
 
-        private static void DoSendAsync(object s)
+        private static void DoSendAsync(SocketConnectionContext ctx)
         {
-            SocketConnectionContext ctx = (SocketConnectionContext)s;
-            ctx._sendTask = ctx.DoSendAsync();
+            ctx._sendTask = Task.Factory.StartNew(ctx.DoSendAsync);
         }
 
         private readonly PipeOptions _receiveOptions, _sendOptions;

@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ThePlague.Networking.Tls\ThePlague.Networking.Tls.csproj" />
 	<ProjectReference Include="..\..\src\ThePlague.Networking.Transports.Sockets\ThePlague.Networking.Transports.Sockets.csproj" />
+    <ProjectReference Include="..\..\src\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RuntimeIdentifier)' == '' OR $([System.String]::Copy('$(RuntimeIdentifier)').ToLower().Contains('win'))">

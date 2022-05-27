@@ -9,9 +9,9 @@ using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
-
-using ThePlague.Networking.Connections;
 using System.Runtime.CompilerServices;
+
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
