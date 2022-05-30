@@ -161,12 +161,6 @@ namespace ThePlague.Networking.Tls
                         }
 
                         cancellationToken.ThrowIfCancellationRequested();
-
-                        //completed, run DoHandshake
-                        if (sslState.HandshakeCompleted())
-                        {
-                            break;
-                        }
                     }
 
                     if (sslState.WantsRead())
