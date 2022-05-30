@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Sources;
+using System.Reflection;
+using System.Linq.Expressions;
 
 using ThePlague.Networking.Connections;
 
@@ -28,10 +30,57 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly PipeScheduler _ioScheduler;
         private Action<object?>? _continuation;
         private short _token;
-        private ExecutionContext? _executionContext;
-        private object? _scheduler;
+        //private ExecutionContext? _executionContext;
+        //private object? _scheduler;
+        private CancellationToken _cancellationToken;
+        private CancellationTokenRegistration _cancellationTokenRegistration;
 
         private static readonly Action<object?> _ContinuationCompleted = _ => { };
+
+        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _AcceptAsync;
+        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _ReceiveAsync;
+        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _SendAsync;
+
+        static SocketAwaitableEventArgs()
+        {
+            _AcceptAsync = InitializeAysncCancellationFunction(nameof(Socket.AcceptAsync));
+            _ReceiveAsync = InitializeAysncCancellationFunction(nameof(Socket.ReceiveAsync));
+            _SendAsync = InitializeAysncCancellationFunction(nameof(Socket.SendAsync));
+        }
+
+        //TODO: hacky!, private (unstable API?) methods!
+        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> InitializeAysncCancellationFunction(string methodName)
+        {
+            MethodInfo method = typeof(Socket).GetMethod
+            (
+                methodName,
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                new Type[] { typeof(SocketAsyncEventArgs), typeof(CancellationToken) },
+                null
+            )!;
+
+            ParameterExpression socketParameter = Expression.Parameter(typeof(Socket));
+            ParameterExpression argsParameter = Expression.Parameter(typeof(SocketAsyncEventArgs));
+            ParameterExpression cancelParameter = Expression.Parameter(typeof(CancellationToken));
+
+            MethodCallExpression methodCall = Expression.Call
+            (
+                socketParameter,
+                method,
+                argsParameter,
+                cancelParameter
+            );
+
+            return Expression.Lambda<Func<Socket, SocketAsyncEventArgs, CancellationToken, bool>>
+            (
+                methodCall,
+                socketParameter,
+                argsParameter,
+                cancelParameter
+            )
+            .Compile();
+        }
 
         /// <summary>
         /// Create a new SocketAwaitableEventArgs instance, optionally providing a scheduler for callbacks
@@ -105,7 +154,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
             this.Release();
 
-            if(error != SocketError.Success)
+            if (error != SocketError.Success)
             {
                 CreateException(this.SocketError);
             }
@@ -255,13 +304,17 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this._token++;
             this._continuation = null;
+            this._cancellationTokenRegistration.Dispose();
+            this._cancellationToken = default;
         }
 
-        public ValueTask<Socket> AcceptAsync(Socket socket)
+        public ValueTask<Socket> AcceptAsync(Socket socket, CancellationToken cancellationToken = default)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
 
-            if (socket.AcceptAsync(this))
+            this._cancellationToken = cancellationToken;
+
+            if (_AcceptAsync(socket, this, cancellationToken))
             {
                 return new ValueTask<Socket>(this, _token);
             }
@@ -278,11 +331,13 @@ namespace ThePlague.Networking.Transports.Sockets
                 ValueTask.FromException<Socket>(CreateException(error));
         }
 
-        public ValueTask<int> ReceiveAsync(Socket socket)
+        public ValueTask<int> ReceiveAsync(Socket socket, CancellationToken cancellationToken = default)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
 
-            if(socket.ReceiveAsync(this))
+            this._cancellationToken = cancellationToken;
+
+            if (_ReceiveAsync(socket, this, cancellationToken))
             {
                 return new ValueTask<int>(this, this._token);
             }
@@ -297,11 +352,13 @@ namespace ThePlague.Networking.Transports.Sockets
                 ValueTask.FromException<int>(CreateException(error));
         }
 
-        public ValueTask<int> SendAsync(Socket socket)
+        public ValueTask<int> SendAsync(Socket socket, CancellationToken cancellationToken = default)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
 
-            if (socket.SendAsync(this))
+            this._cancellationToken = cancellationToken;
+
+            if (_SendAsync(socket, this, cancellationToken))
             {
                 return new ValueTask<int>(this, this._token);
             }
@@ -316,9 +373,11 @@ namespace ThePlague.Networking.Transports.Sockets
                 ValueTask.FromException<int>(CreateException(error));
         }
 
-        public ValueTask ConnectAsync(Socket socket)
+        public ValueTask ConnectAsync(Socket socket, CancellationToken cancellationToken = default)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
+
+            this._cancellationTokenRegistration = cancellationToken.UnsafeRegister((e) => Socket.CancelConnectAsync((SocketAsyncEventArgs)e!), this);
 
             try
             {
@@ -329,9 +388,14 @@ namespace ThePlague.Networking.Transports.Sockets
             }
             catch
             {
+                this._cancellationTokenRegistration.Dispose();
                 this.Release();
                 throw;
             }
+
+            //completed
+
+            this._cancellationTokenRegistration.Dispose();
 
             SocketError error = this.SocketError;
 

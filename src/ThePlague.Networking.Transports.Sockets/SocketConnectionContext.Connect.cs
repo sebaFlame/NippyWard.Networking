@@ -1,6 +1,7 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
+using System.Threading;
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
@@ -24,7 +25,8 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket = null,
             IFeatureCollection featureCollection = null,
             string name = null,
-            ILogger logger = null
+            ILogger logger = null,
+            CancellationToken cancellationToken = default
         )
             => ConnectAsync
             (
@@ -35,7 +37,8 @@ namespace ThePlague.Networking.Transports.Sockets
                 socket,
                 featureCollection,
                 name,
-                logger
+                logger,
+                cancellationToken
             );
 
         /// <summary>
@@ -50,7 +53,8 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket = null,
             IFeatureCollection featureCollection = null,
             string name = null,
-            ILogger logger = null
+            ILogger logger = null,
+            CancellationToken cancellationToken = default
         )
         {
             AddressFamily addressFamily =
@@ -97,7 +101,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 args.RemoteEndPoint = endpoint;
 
-                ValueTask connectTask = args.ConnectAsync(socket);
+                ValueTask connectTask = args.ConnectAsync(socket, cancellationToken);
                 if(!connectTask.IsCompletedSuccessfully)
                 {
                     await connectTask;

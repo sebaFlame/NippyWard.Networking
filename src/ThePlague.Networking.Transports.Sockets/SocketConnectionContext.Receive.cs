@@ -265,12 +265,18 @@ namespace ThePlague.Networking.Transports.Sockets
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
-        private static ValueTask<int> DoReceive(Socket socket, SocketAwaitableEventArgs args, Memory<byte> buffer)
+        private static ValueTask<int> DoReceive
+        (
+            Socket socket,
+            SocketAwaitableEventArgs args,
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
             args.SetBuffer(buffer);
 
-            return args.ReceiveAsync(socket);
+            return args.ReceiveAsync(socket, cancellationToken);
         }
     }
 }

@@ -79,8 +79,8 @@ namespace ThePlague.Networking.Transports.Sockets
         private readonly CancellationTokenSource _connectionClosedTokenSource;
         private readonly Pipe _sendToSocket;
         private readonly Pipe _receiveFromSocket;
-        private readonly PipeReader _input;
-        private readonly PipeWriter _output;
+        private readonly WrappedReader _input;
+        private readonly WrappedWriter _output;
 
         // TODO: flagify and fully implement
 #pragma warning disable CS0414, CS0649, IDE0044, IDE0051, IDE0052

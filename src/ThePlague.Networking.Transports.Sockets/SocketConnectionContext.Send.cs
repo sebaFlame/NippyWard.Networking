@@ -228,12 +228,13 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket,
             SocketAwaitableEventArgs args,
             in ReadOnlySequence<byte> buffer,
-            ref List<ArraySegment<byte>> spareBuffer
+            ref List<ArraySegment<byte>> spareBuffer,
+            CancellationToken cancellationToken = default
         )
         {
             if (buffer.IsSingleSegment)
             {
-                return DoSend(socket, args, buffer.First, ref spareBuffer);
+                return DoSend(socket, args, buffer.First, ref spareBuffer, cancellationToken);
             }
 
             //ensure buffer is null
@@ -246,7 +247,7 @@ namespace ThePlague.Networking.Transports.Sockets
             IList<ArraySegment<byte>> bufferList = GetBufferList(args, buffer, ref spareBuffer);
             args.BufferList = bufferList;
 
-            return args.SendAsync(socket);
+            return args.SendAsync(socket, cancellationToken);
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.
@@ -255,7 +256,8 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket,
             SocketAwaitableEventArgs args,
             ReadOnlyMemory<byte> memory,
-            ref List<ArraySegment<byte>> spareBuffer
+            ref List<ArraySegment<byte>> spareBuffer,
+            CancellationToken cancellationToken = default
         )
 #pragma warning restore RCS1231 // Make parameter ref read-only.
         {
@@ -263,7 +265,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
             args.SetBuffer(MemoryMarshal.AsMemory(memory));
 
-            return args.SendAsync(socket);
+            return args.SendAsync(socket, cancellationToken);
         }
 
         private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)

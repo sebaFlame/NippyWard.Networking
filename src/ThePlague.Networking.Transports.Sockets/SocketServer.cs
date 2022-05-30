@@ -146,7 +146,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 Socket socket = this._listenerSocket;
                 Socket clientSocket;
 
-                ValueTask<Socket> socketTask = this._acceptEventArg.AcceptAsync(socket);
+                ValueTask<Socket> socketTask = this._acceptEventArg.AcceptAsync(socket, cancellationToken);
 
                 if(socketTask.IsCompletedSuccessfully)
                 {
