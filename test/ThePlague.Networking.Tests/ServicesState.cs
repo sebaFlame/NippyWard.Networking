@@ -30,6 +30,8 @@ namespace ThePlague.Networking.Tests
                     builder.AddProvider(new FileLoggerProvider(LogWriter.Instance));
                 })
                 .BuildServiceProvider();
+
+
         }
     }
 }

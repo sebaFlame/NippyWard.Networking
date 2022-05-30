@@ -12,21 +12,16 @@ namespace ThePlague.Networking.Logging
 {
     public class FileLoggerProvider : ILoggerProvider
     {
-        private ChannelWriter<string> _channelWriter;
+        private readonly LogWriter _logWriter;
 
         public FileLoggerProvider(LogWriter logWriter)
         {
-            this._channelWriter = logWriter.Writer;
+            this._logWriter = logWriter;
         }
 
         public ILogger CreateLogger(string categoryName)
         {
-            return new FileLogger(this.Write);
-        }
-
-        public void Write(string line)
-        {
-            this._channelWriter.TryWrite(line);
+            return new FileLogger(this._logWriter);
         }
 
         public void Dispose()

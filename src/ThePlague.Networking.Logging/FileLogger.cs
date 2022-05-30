@@ -12,11 +12,11 @@ namespace ThePlague.Networking.Logging
 {
     public class FileLogger : ILogger, IDisposable
     {
-        private readonly Action<string> _writeLine;
+        private readonly LogWriter _logWriter;
 
-        public FileLogger(Action<string> writeLine)
+        public FileLogger(LogWriter logWriter)
         {
-            this._writeLine = writeLine;
+            this._logWriter = logWriter;
         }
 
         public IDisposable BeginScope<TState>(TState state)
@@ -29,7 +29,7 @@ namespace ThePlague.Networking.Logging
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            this._writeLine($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} {state}{(exception != null ? "\n" : string.Empty)}{exception}");
+            this._logWriter.WriteLine($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} {state}{(exception != null ? "\n" : string.Empty)}{exception}");
         }
 
         public void Dispose()

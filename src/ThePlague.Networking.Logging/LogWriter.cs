@@ -4,30 +4,55 @@ using System.IO;
 using System.Text;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Logging
 {
-    public class LogWriter : IAsyncDisposable
+    public class LogWriter : TextWriter, IAsyncDisposable
     {
+        public override Encoding Encoding => Encoding.UTF8;
+
         public ChannelWriter<string> Writer => this._channelWriter;
-        public static LogWriter Instance => _Instance;
+        public static LogWriter Instance
+        {
+            get
+            {
+                lock(_InstanceLock)
+                {
+                    if (_Instance is null)
+                    {
+#if LOGBYDATE
+                        _Instance = new LogWriter(Path.Combine(_LogDirName, _LogFileName), true);
+#else
+                        _Instance = new LogWriter(_LogFileName);
+#endif
+
+#if TRACELISTENER
+                        TextWriterTraceListener trace = new TextWriterTraceListener(_Instance, _LogFileName);
+                        Trace.Listeners.Add(trace);
+#endif
+                    }
+                }
+
+                return _Instance;
+            }
+        }
 
         private ChannelWriter<string> _channelWriter;
         private Task _doLogWriter;
 
         private const string _LogFileName = "log";
-        private static LogWriter _Instance;
+        private const string _LogDirName = "logs";
+
+        private static LogWriter? _Instance;
+        private static readonly object _InstanceLock;
 
         static LogWriter()
         {
-#if LOGBYDATE
-            _Instance = new LogWriter(Path.Combine("log", _LogFileName), true);
-#else
-            _Instance = new LogWriter(_LogFileName);
-#endif
+            _InstanceLock = new object();
         }
 
         public LogWriter(string logFilePath, bool logByDate = false)
@@ -50,16 +75,10 @@ namespace ThePlague.Networking.Logging
                 path = Path.GetFullPath(filePath);
 
                 string currentPath = string.Empty;
-                foreach(string part in path.Split('\\', StringSplitOptions.RemoveEmptyEntries))
+                string[] parts = path.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length - 1; i++)
                 {
-                    if(string.IsNullOrWhiteSpace(currentPath))
-                    {
-                        currentPath = part;
-                    }
-                    else
-                    {
-                        currentPath = Path.Combine(currentPath, part);
-                    }
+                    currentPath = Path.Combine(currentPath, parts[i]);
 
                     if (!Directory.Exists(currentPath))
                     {
@@ -68,11 +87,11 @@ namespace ThePlague.Networking.Logging
                 }
             }
 
-            FileStream file = File.Open(logFilePath, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+            FileStream file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None, 4096, false);
 
             //truncate file
             file.SetLength(0);
-            TextWriter textWriter = new StreamWriter(file, Encoding.UTF8, -1, false);
+            TextWriter textWriter = new StreamWriter(file, this.Encoding, -1, false);
 
             this._channelWriter = channel.Writer;
             this._doLogWriter = DoLogWrite(textWriter, channel.Reader);
@@ -128,7 +147,47 @@ namespace ThePlague.Networking.Logging
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public override void Write(string? value)
+        {
+            if(value is null)
+            {
+                return;
+            }
+
+            this._channelWriter.TryWrite(value);
+        }
+
+        public override Task WriteAsync(string? value)
+        {
+            if (value is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return this._channelWriter.WriteAsync(value).AsTask();
+        }
+
+        public override void WriteLine(string? value)
+        {
+            if(value is null)
+            {
+                return;
+            }
+
+            this._channelWriter.TryWrite(value);
+        }
+
+        public override Task WriteLineAsync(string? value)
+        {
+            if (value is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            return this._channelWriter.WriteAsync(value).AsTask();
+        }
+
+        public override async ValueTask DisposeAsync()
         {
             this._channelWriter.Complete();
 
@@ -138,6 +197,18 @@ namespace ThePlague.Networking.Logging
             }
             catch
             { }
+
+            await base.DisposeAsync();
+        }
+
+        public override void Close()
+        {
+            //NOP
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            //NOP
         }
     }
 }

@@ -490,7 +490,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private static void SetDefaultSocketOptions(Socket socket)
         {
-            //socket.LingerState = new LingerOption(true, 10);
+            socket.LingerState = new LingerOption(true, 10);
 
             if (socket.AddressFamily == AddressFamily.Unix)
             {
@@ -573,12 +573,12 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private static void DoReceiveAsync(SocketConnectionContext ctx)
         {
-            ctx._receiveTask = Task.Factory.StartNew(ctx.DoReceiveAsync);
+            ctx._receiveTask = ctx.DoReceiveAsync();
         }
 
         private static void DoSendAsync(SocketConnectionContext ctx)
         {
-            ctx._sendTask = Task.Factory.StartNew(ctx.DoSendAsync);
+            ctx._sendTask = ctx.DoSendAsync();
         }
 
         private readonly PipeOptions _receiveOptions, _sendOptions;

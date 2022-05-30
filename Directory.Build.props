@@ -1,13 +1,15 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-	<PropertyGroup>
-		<TraceLog Condition="'$(TraceLog)' == ''">true</TraceLog>
-		<LogByDate Condition="'$(LogByDate)' == ''">false</LogByDate>
-	</PropertyGroup>
+  <PropertyGroup>
+    <TraceLog Condition="'$(TraceLog)' == ''">true</TraceLog>
+    <TraceListener Condition="'$(TraceLog)' == 'true' AND '$(TraceListener)' == ''">true</TraceListener>
+    <LogByDate Condition="'$(LogByDate)' == ''">false</LogByDate>
+  </PropertyGroup>
 
-	<PropertyGroup>
-		<DefineConstants Condition="'$(LogByDate)' == 'true'">$(DefineConstants);LOGBYDATE</DefineConstants>
-		<DefineConstants Condition="'$(TraceLog)' == 'true'">$(DefineConstants);TRACELOG</DefineConstants>
-	</PropertyGroup>
+  <PropertyGroup>
+    <DefineConstants Condition="'$(LogByDate)' == 'true'">$(DefineConstants);LOGBYDATE</DefineConstants>
+    <DefineConstants Condition="'$(TraceLog)' == 'true'">$(DefineConstants);TRACELOG</DefineConstants>
+    <DefineConstants Condition="'$(TraceListener)' == 'true' AND '$(TraceLog)' == 'true'">$(DefineConstants);TRACELISTENER</DefineConstants>
+  </PropertyGroup>
 </Project>
