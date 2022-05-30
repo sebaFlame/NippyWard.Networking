@@ -257,16 +257,16 @@ namespace ThePlague.Networking.Transports.Sockets
                 return;
             }
 
-            this.TrySetShutdown
-            (
-                PipeShutdownKind.ConnectionAborted
-            );
-
             //complete if not completed yet, so write thread can end
             //this does not override existing completion
             try
             {
                 this._output.Complete(new ConnectionAbortedException(nameof(SocketConnectionContext)));
+
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.OutputWriterCompleted
+                );
             }
             catch
             { }
@@ -276,11 +276,27 @@ namespace ThePlague.Networking.Transports.Sockets
             try
             {
                 this._input.Complete(new ConnectionAbortedException(nameof(SocketConnectionContext)));
+
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.InputReaderCompleted
+                );
             }
             catch
             { }
 
-            this._connectionClosedTokenSource.Cancel();
+            try
+            {
+                this._connectionClosedTokenSource.Cancel();
+
+                this.TrySetShutdown
+                (
+                    PipeShutdownKind.ConnectionAborted
+                );
+            }
+            catch
+            { }
+            
         }
 
         private void OnBandwidthEvent(object source, ElapsedEventArgs e)
@@ -309,13 +325,13 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             try
             {
+                //ensure connection closed
+                this._connectionClosedTokenSource.Cancel();
+
                 this.TrySetShutdown
                 (
                     PipeShutdownKind.ConnectionAborted
                 );
-
-                //ensure connection closed
-                this._connectionClosedTokenSource.Cancel();
             }
             catch
             { }

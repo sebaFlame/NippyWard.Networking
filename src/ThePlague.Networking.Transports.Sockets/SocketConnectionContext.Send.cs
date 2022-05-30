@@ -86,7 +86,14 @@ namespace ThePlague.Networking.Transports.Sockets
                         {
                             this.TraceLog($"sending {buffer.Length} bytes over socket...");
 
-                            socketTask = DoSend(socket, writerArgs, buffer, ref this._spareBuffer);
+                            socketTask = DoSend
+                            (
+                                socket,
+                                writerArgs,
+                                buffer,
+                                ref this._spareBuffer,
+                                this.ConnectionClosed
+                            );
 
                             this.TraceLog(socketTask.IsCompletedSuccessfully ? "send is sync" : "send is async");
 

@@ -87,8 +87,6 @@ namespace ThePlague.Networking.Transports.Pipes
         {
             this._pipe.Input.Complete(abortReason);
             this._pipe.Output.Complete(abortReason);
-
-            base.Abort(abortReason);
         }
 
         public void Dispose()

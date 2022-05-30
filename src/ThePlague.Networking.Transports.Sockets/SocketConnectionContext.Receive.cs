@@ -75,7 +75,13 @@ namespace ThePlague.Networking.Transports.Sockets
                         this.TraceLog($"initiating socket receive...");
 
                         int bytesReceived;
-                        ValueTask<int> socketTask = DoReceive(socket, readerArgs, buffer);
+                        ValueTask<int> socketTask = DoReceive
+                        (
+                            socket,
+                            readerArgs,
+                            buffer,
+                            this.ConnectionClosed
+                        );
 
                         this.TraceLog(socketTask.IsCompletedSuccessfully ? "receive is sync" : "receive is async");
 
