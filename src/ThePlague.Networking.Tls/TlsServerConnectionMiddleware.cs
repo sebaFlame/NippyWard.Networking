@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 
 using OpenSSL.Core.SSL;
+using ThePlague.Networking.Logging;
 
 #nullable enable
 
@@ -18,6 +19,7 @@ namespace ThePlague.Networking.Tls
     {
         private readonly ConnectionDelegate _next;
         private readonly ILogger? _logger;
+        private readonly SslOptions _sslOptions;
 
         //be aware that this will only get disposed by GC
         private readonly SslContext _sslContext;
@@ -31,6 +33,7 @@ namespace ThePlague.Networking.Tls
         {
             this._next = next;
             this._logger = logger;
+            this._sslOptions = sslOptions;
 
             this._sslContext = SslContext.CreateSslContext
             (
@@ -50,13 +53,14 @@ namespace ThePlague.Networking.Tls
                     context.ConnectionId,
                     oldPipe.Input,
                     oldPipe.Output,
-                    this._logger
+                    this._logger,
+                    this._sslOptions.Pool
                 ))
                 {
                     context.Features.Set<ITlsConnectionFeature>(pipe);
                     context.Features.Set<ITlsHandshakeFeature>(pipe);
 
-                    this._logger?.LogDebug($"[{context.ConnectionId}] Activating TLS transport");
+                    this._logger?.DebugLog(context.ConnectionId, "Activating TLS transport");
                     await pipe.AuthenticateAsServerAsync
                     (
                         this._sslContext,
@@ -70,7 +74,7 @@ namespace ThePlague.Networking.Tls
             }
             finally
             {
-                this._logger?.LogDebug($"[{context.ConnectionId}] Deactivating TLS transport");
+                this._logger?.DebugLog(context.ConnectionId, "Deactivating TLS transport");
                 context.Transport = oldPipe;
             }
         }

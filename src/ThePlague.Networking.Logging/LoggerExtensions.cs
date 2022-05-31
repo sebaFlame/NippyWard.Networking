@@ -42,7 +42,7 @@ namespace ThePlague.Networking.Logging
         )
             => TraceLog(logger, identifier, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
 
-        public static void TraceLog
+        private static void TraceLog
         (
             this ILogger logger,
             string identifier,
@@ -54,5 +54,14 @@ namespace ThePlague.Networking.Logging
             logger.LogTrace($"[{Thread.CurrentThread.ManagedThreadId.ToString()}, {identifier}, {caller}] {message}");
 #endif
         }
+
+        [Conditional("DEBUG")]
+        public static void DebugLog
+        (
+            this ILogger logger,
+            string identifier,
+            string message
+        )
+            => logger.LogDebug($"[{identifier}] {message}");
     }
 }

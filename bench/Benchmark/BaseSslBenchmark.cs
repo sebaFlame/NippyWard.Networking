@@ -147,7 +147,14 @@ namespace Benchmark
            => SetAwaitTask
             (
                new ConnectionBuilder(serviceProvider)
-                .UseClientTls(tlsProtocol, new string[] { cipher }),
+                .UseClientTls
+                (
+                   new SslOptions(tlsProtocol)
+                   {
+                       Ciphers = new string[] { cipher },
+                       Pool = _Pool
+                   }
+                ),
                awaitTask
             )
            .Build();
@@ -165,9 +172,10 @@ namespace Benchmark
                 new ConnectionBuilder(serviceProvider)
                 .UseServerTls
                 (
-                    openSslCertificate,
-                    openSslKey,
-                    tlsProtocol
+                    new SslOptions(openSslCertificate, openSslKey, tlsProtocol)
+                    {
+                        Pool = _Pool
+                    }
                 ),
                 awaitTask
             )

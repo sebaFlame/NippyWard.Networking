@@ -48,6 +48,7 @@ namespace Benchmark
         protected static SocketConnectionContextFactory _SocketConnectionFactory;
         protected static StreamConnectionContextListenerFactory _StreamListenerFactory;
         protected static StreamConnectionContextFactory _StreamConnectionFactory;
+        protected static MemoryPool<byte> _Pool;
 
         static BaseBenchmark()
         {
@@ -62,28 +63,8 @@ namespace Benchmark
 
             _UsedPorts = new List<int>();
 
-            //pre-allocate pool
-            MemoryPool<byte> pool = new ArrayMemoryPool<byte>();
-            List<IMemoryOwner<byte>> rented = new List<IMemoryOwner<byte>>();
-
-            //4 times buffer size should be enough
-            for (int i = 0; i < _BufferSize * 5; i += _MinimumSegmentSize)
-            {
-                if(i % 65536 == 0)
-                {
-                    rented.Add(pool.Rent(65536));
-                }
-                else
-                {
-                    rented.Add(pool.Rent(_MinimumSegmentSize));
-                }
-            }
-
-            //return to pool
-            foreach (IMemoryOwner<byte> m in rented)
-            {
-                m.Dispose();
-            }
+            //Initialize pool
+            MemoryPool<byte> pool = _Pool = new ArrayMemoryPool<byte>();
 
             //receive (default) pipoptions with custom pool
             PipeOptions receiveOptions = new PipeOptions
@@ -93,7 +74,8 @@ namespace Benchmark
                 useSynchronizationContext: false
             );
 
-            //pipeoptions without send buffering (to emulate StreamPipeWriter more closely)
+            //for a fairer comparison
+            //pipeoptions without send buffering
             //pipeoptions with inline send (send inline when buffer conditions are correct)
             PipeOptions sendOptions = new PipeOptions
             (

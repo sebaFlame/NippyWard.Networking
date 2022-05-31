@@ -72,15 +72,15 @@ namespace Benchmark.LegacySsl
 
                     await sslStream.AuthenticateAsClientAsync(sslOptions, cancellationTokeSource.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException ex)
                 {
-                    _logger?.LogDebug(2, "Authentication timed out");
+                    _logger?.LogError(ex, "Authentication timed out");
                     await sslStream.DisposeAsync().ConfigureAwait(false);
                     return;
                 }
                 catch (Exception ex) when (ex is IOException || ex is AuthenticationException)
                 {
-                    _logger?.LogDebug(1, ex, "Authentication failed");
+                    _logger?.LogError(ex, "Authentication failed");
                     await sslStream.DisposeAsync().ConfigureAwait(false);
                     return;
                 }
