@@ -43,17 +43,6 @@ namespace Benchmark
         internal const string _Cipher = "ECDHE-RSA-AES256-GCM-SHA384";
         internal const SslProtocol _OpenSsslProtocol = SslProtocol.Tls12;
         internal const SslProtocols _LegacySslProtocl = SslProtocols.Tls12;
-        internal static byte[] _Buffer;
-
-        static BaseSslBenchmark()
-        {
-            //1MB
-            _Buffer = new byte[1024 * 1024];
-
-            //fill buffer, so no zeroes
-            Span<byte> span = new Span<byte>(_Buffer);
-            span.Fill(1);
-        }
 
         protected static void InitializeCertificate
         (

@@ -10,7 +10,7 @@ namespace Benchmark
     public static class Program
     {
         public static void Main(string[] args)
-            => BenchmarkRunner.Run //<HandshakeBenchmark>
+            => BenchmarkRunner.Run
             (
                 typeof(Program).Assembly,
 #if DEBUG
@@ -18,8 +18,8 @@ namespace Benchmark
 #else
                 DefaultConfig.Instance
 #endif
-                    .AddDiagnoser(MemoryDiagnoser.Default)
-                    //.AddDiagnoser(new EtwProfiler())
+                //uncomment do start event tracing    
+                //.AddDiagnoser(new EtwProfiler())
                 , args
             );
     }

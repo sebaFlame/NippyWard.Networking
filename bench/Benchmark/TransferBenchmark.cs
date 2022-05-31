@@ -19,17 +19,6 @@ namespace Benchmark
         private ConnectionDelegate? _streamClientDelegate, _streamServerDelegate;
         private ConnectionDelegate? _socketClientDelegate, _socketServerDelegate;
 
-        private static byte[] _Buffer;
-
-        static TransferBenchmark()
-        {
-            //1MB
-            _Buffer = new byte[1024 * 1024];
-
-            Span<byte> span = new Span<byte>(_Buffer);
-            span.Fill(1);
-        }
-
         [GlobalSetup(Target = nameof(LegacyServerTransfer))]
         public async Task LegacySetup()
         {

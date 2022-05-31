@@ -49,6 +49,7 @@ namespace Benchmark
         protected static StreamConnectionContextListenerFactory _StreamListenerFactory;
         protected static StreamConnectionContextFactory _StreamConnectionFactory;
         protected static MemoryPool<byte> _Pool;
+        internal static byte[] _Buffer;
 
         static BaseBenchmark()
         {
@@ -60,6 +61,13 @@ namespace Benchmark
                         .AddProvider(new FileLoggerProvider(LogWriter.Instance))
                 )
                 .BuildServiceProvider();
+
+            //1MB
+            _Buffer = new byte[1024 * 1024];
+
+            //fill buffer, so no zeroes
+            Span<byte> span = new Span<byte>(_Buffer);
+            span.Fill(1);
 
             _UsedPorts = new List<int>();
 
@@ -96,6 +104,7 @@ namespace Benchmark
             _StreamPipeReaderOptions = new StreamPipeReaderOptions
             (
                 pool: pool,
+                minimumReadSize: _MinimumSegmentSize,
                 useZeroByteReads: true
             );
 
