@@ -339,5 +339,13 @@ namespace ThePlague.Networking.Tls.Buffer
                 }
             }
         }
+
+        public void Reset()
+        {
+            this._readTailIndex = 0;
+            this._readHeadIndex = 0;
+            this._lastExaminedIndex = -1;
+            this._unconsumedBytes = 0;
+        }
     }
 }

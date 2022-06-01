@@ -104,8 +104,10 @@ namespace ThePlague.Networking.Transports.Sockets
         private SocketConnectionContext
         (
             Socket socket,
-            PipeOptions sendPipeOptions,
-            PipeOptions receivePipeOptions,
+            Pipe sendToSocket,
+            Pipe receiveFromSocket,
+            PipeScheduler sendScheduler,
+            PipeScheduler receiveScheduler,
             SocketConnectionOptions socketConnectionOptions,
             IFeatureCollection featureCollection = null,
             string name = null,
@@ -118,16 +120,6 @@ namespace ThePlague.Networking.Transports.Sockets
             }
             this.ConnectionId = name.Trim();
 
-            if(sendPipeOptions == null)
-            {
-                sendPipeOptions = PipeOptions.Default;
-            }
-
-            if(receivePipeOptions == null)
-            {
-                receivePipeOptions = PipeOptions.Default;
-            }
-
             if(socket is null)
             {
                 throw new ArgumentNullException(nameof(socket));
@@ -135,10 +127,10 @@ namespace ThePlague.Networking.Transports.Sockets
 
             this.Socket = socket;
             this.SocketConnectionOptions = socketConnectionOptions;
-            this._sendToSocket = new Pipe(sendPipeOptions);
-            this._receiveFromSocket = new Pipe(receivePipeOptions);
-            this._receiveOptions = receivePipeOptions;
-            this._sendOptions = sendPipeOptions;
+            this._sendToSocket = sendToSocket;
+            this._receiveFromSocket = receiveFromSocket;
+            this._receiveScheduler = sendScheduler;
+            this._sendScheduler = receiveScheduler;
             this._connectionClosedTokenSource = new CancellationTokenSource();
 
             this._input = new WrappedReader
@@ -463,18 +455,18 @@ namespace ThePlague.Networking.Transports.Sockets
         internal static SocketConnectionContext Create
         (
             Socket socket,
-            PipeOptions pipeOptions = null,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
+            PipeOptions pipeOptions = null,
             IFeatureCollection serverFeatureCollection = null,
             string name = null,
             ILogger logger = null
         )
-            => new SocketConnectionContext
+            => Create
             (
                 socket,
-                pipeOptions,
-                pipeOptions,
                 socketConnectionOptions,
+                pipeOptions,
+                pipeOptions,
                 serverFeatureCollection,
                 name,
                 logger
@@ -486,9 +478,37 @@ namespace ThePlague.Networking.Transports.Sockets
         internal static SocketConnectionContext Create
         (
             Socket socket,
-            PipeOptions sendPipeOptions,
-            PipeOptions receivePipeOptions,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
+            PipeOptions sendPipeOptions = null,
+            PipeOptions receivePipeOptions = null,
+            IFeatureCollection serverFeatureCollection = null,
+            string name = null,
+            ILogger logger = null
+        )
+            => Create
+            (
+                socket,
+                new Pipe(sendPipeOptions ?? PipeOptions.Default),
+                new Pipe(receivePipeOptions ?? PipeOptions.Default),
+                socketConnectionOptions,
+                sendPipeOptions?.ReaderScheduler ?? PipeScheduler.ThreadPool,
+                receivePipeOptions?.WriterScheduler ?? PipeScheduler.ThreadPool,
+                serverFeatureCollection,
+                name,
+                logger
+            );
+
+        /// <summary>
+        /// Create a SocketConnection instance over an existing socket
+        /// </summary>
+        internal static SocketConnectionContext Create
+        (
+            Socket socket,
+            Pipe sendToSocket,
+            Pipe receiveFromSocket,
+            SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
+            PipeScheduler sendScheduler = null,
+            PipeScheduler receiveScheduler = null,
             IFeatureCollection serverFeatureCollection = null,
             string name = null,
             ILogger logger = null
@@ -496,8 +516,10 @@ namespace ThePlague.Networking.Transports.Sockets
             => new SocketConnectionContext
             (
                 socket,
-                sendPipeOptions,
-                receivePipeOptions,
+                sendToSocket,
+                receiveFromSocket,
+                sendScheduler,
+                receiveScheduler,
                 socketConnectionOptions,
                 serverFeatureCollection,
                 name,
@@ -597,7 +619,7 @@ namespace ThePlague.Networking.Transports.Sockets
             ctx._sendTask = ctx.DoSendAsync();
         }
 
-        private readonly PipeOptions _receiveOptions, _sendOptions;
+        private readonly PipeScheduler _receiveScheduler, _sendScheduler;
         private readonly ILogger _logger;
 
         [Conditional("TRACELOG")]

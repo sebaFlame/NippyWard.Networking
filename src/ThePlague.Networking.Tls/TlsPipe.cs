@@ -61,19 +61,20 @@ namespace ThePlague.Networking.Tls
             _WriteCompletedTask = Task.CompletedTask;
         }
 
-        public TlsPipe        
+        public TlsPipe
         (
             string connectionId,
             PipeReader innerReader,
             PipeWriter innerWriter,
-            ILogger logger,
-            MemoryPool<byte> pool = null
+            TlsBuffer decryptedReadBuffer,
+            TlsBuffer unencryptedWriteBuffer,
+            ILogger logger = null
         )
         {
             this._connectionId = connectionId;
 
-            this._decryptedReadBuffer = new TlsBuffer(pool);
-            this._unencryptedWriteBuffer = new TlsBuffer(pool);
+            this._decryptedReadBuffer = decryptedReadBuffer;
+            this._unencryptedWriteBuffer = unencryptedWriteBuffer;
 
             this._innerReader = innerReader;
             this._innerWriter = innerWriter;
@@ -84,6 +85,25 @@ namespace ThePlague.Networking.Tls
             this._logger = logger;
             this._writeAwaiter = null;
         }
+
+        public TlsPipe
+        (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
+            ILogger logger = null,
+            MemoryPool<byte> pool = null
+        )
+            : this
+            (
+                  connectionId,
+                  innerReader,
+                  innerWriter,
+                  new TlsBuffer(pool),
+                  new TlsBuffer(pool),
+                  logger
+            )
+        { }
 
         #region authentication
         //TODO: when PipeScheduler.ThreadPool, resumeWriterThreshold and pauseWriterThreshold are enabled

@@ -43,7 +43,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this._readerArgs = readerArgs = new SocketAwaitableEventArgs
                 (
-                    this._receiveOptions.WriterScheduler,
+                    this._receiveScheduler,
                     this._logger
                 );
 

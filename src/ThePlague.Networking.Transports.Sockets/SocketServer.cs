@@ -15,6 +15,9 @@ using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
+    /*TODO:
+     * Add Pipe pooling as an alternative to PipeOptions
+     */
     /// <summary>
     /// Represents a multi-client socket-server capable of dispatching pipeline clients
     /// </summary>

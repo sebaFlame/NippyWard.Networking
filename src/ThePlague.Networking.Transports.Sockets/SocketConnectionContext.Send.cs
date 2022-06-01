@@ -41,7 +41,7 @@ namespace ThePlague.Networking.Transports.Sockets
             {
                 this._writerArgs = writerArgs = new SocketAwaitableEventArgs
                 (
-                    this._sendOptions.ReaderScheduler,
+                    this._sendScheduler,
                     this._logger
                 );
 

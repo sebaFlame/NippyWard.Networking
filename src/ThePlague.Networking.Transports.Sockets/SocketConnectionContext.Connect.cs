@@ -20,8 +20,8 @@ namespace ThePlague.Networking.Transports.Sockets
         public static ValueTask<ConnectionContext> ConnectAsync
         (
             EndPoint endpoint,
-            PipeOptions pipeOptions = null,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
+            PipeOptions pipeOptions = null,
             Socket socket = null,
             IFeatureCollection featureCollection = null,
             string name = null,
@@ -31,9 +31,9 @@ namespace ThePlague.Networking.Transports.Sockets
             => ConnectAsync
             (
                 endpoint,
-                pipeOptions,
-                pipeOptions,
                 connectionOptions,
+                pipeOptions,
+                pipeOptions,
                 socket,
                 featureCollection,
                 name,
@@ -47,9 +47,9 @@ namespace ThePlague.Networking.Transports.Sockets
         public static async ValueTask<ConnectionContext> ConnectAsync
         (
             EndPoint endpoint,
-            PipeOptions sendPipeOptions,
-            PipeOptions receivePipeOptions,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
+            PipeOptions sendPipeOptions = null,
+            PipeOptions receivePipeOptions = null,
             Socket socket = null,
             IFeatureCollection featureCollection = null,
             string name = null,
@@ -57,18 +57,102 @@ namespace ThePlague.Networking.Transports.Sockets
             CancellationToken cancellationToken = default
         )
         {
-            AddressFamily addressFamily =
-                endpoint.AddressFamily == AddressFamily.Unspecified
-                    ? AddressFamily.InterNetwork
-                    : endpoint.AddressFamily;
+            socket = await ConnectAsync
+            (
+                endpoint,
+                connectionOptions,
+                socket,
+                name,
+                logger,
+                cancellationToken
+            );
 
-            ProtocolType protocolType =
-                addressFamily == AddressFamily.Unix
-                    ? ProtocolType.Unspecified
-                    : ProtocolType.Tcp;
+            SocketConnectionContext connection = Create
+            (
+                socket,
+                connectionOptions,
+                sendPipeOptions,
+                receivePipeOptions,
+                featureCollection,
+                name,
+                logger
+            );
 
-            if(socket is null)
+            connection.LocalEndPoint = socket.LocalEndPoint;
+            connection.RemoteEndPoint = socket.RemoteEndPoint;
+
+            return connection;
+        }
+
+        /// <summary>
+        /// Open a new or existing socket as a client
+        /// </summary>
+        public static async ValueTask<ConnectionContext> ConnectAsync
+        (
+            EndPoint endpoint,
+            Pipe sendToSocket,
+            Pipe receiveFromSocket,
+            SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
+            PipeScheduler sendScheduler = null,
+            PipeScheduler receiveScheduler = null,
+            Socket socket = null,
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            socket = await ConnectAsync
+            (
+                endpoint,
+                connectionOptions,
+                socket,
+                name,
+                logger,
+                cancellationToken
+            );
+
+            SocketConnectionContext connection = Create
+            (
+                socket,
+                sendToSocket,
+                receiveFromSocket,
+                connectionOptions,
+                sendScheduler,
+                receiveScheduler,
+                featureCollection,
+                name,
+                logger
+            );
+
+            connection.LocalEndPoint = socket.LocalEndPoint;
+            connection.RemoteEndPoint = socket.RemoteEndPoint;
+
+            return connection;
+        }
+
+        private static async Task<Socket> ConnectAsync
+        (
+            EndPoint endpoint,
+            SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
+            Socket socket = null,
+            string name = null,
+            ILogger logger = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (socket is null)
             {
+                AddressFamily addressFamily =
+                    endpoint.AddressFamily == AddressFamily.Unspecified
+                        ? AddressFamily.InterNetwork
+                        : endpoint.AddressFamily;
+
+                ProtocolType protocolType =
+                    addressFamily == AddressFamily.Unix
+                        ? ProtocolType.Unspecified
+                        : ProtocolType.Tcp;
+
                 socket = new Socket
                 (
                     addressFamily,
@@ -77,21 +161,11 @@ namespace ThePlague.Networking.Transports.Sockets
                 );
             }
 
-            if(sendPipeOptions is null)
-            {
-                sendPipeOptions = PipeOptions.Default;
-            }
-
-            if(receivePipeOptions is null)
-            {
-                receivePipeOptions = PipeOptions.Default;
-            }
-
             SetRecommendedClientOptions(socket);
 
             logger?.TraceLog(name, $"connecting to {endpoint}");
 
-            using(SocketAwaitableEventArgs args = new SocketAwaitableEventArgs
+            using (SocketAwaitableEventArgs args = new SocketAwaitableEventArgs
             (
                 (connectionOptions & SocketConnectionOptions.InlineConnect) == 0
                     ? PipeScheduler.ThreadPool
@@ -102,27 +176,13 @@ namespace ThePlague.Networking.Transports.Sockets
                 args.RemoteEndPoint = endpoint;
 
                 ValueTask connectTask = args.ConnectAsync(socket, cancellationToken);
-                if(!connectTask.IsCompletedSuccessfully)
+                if (!connectTask.IsCompletedSuccessfully)
                 {
                     await connectTask;
                 }
             }
 
-            SocketConnectionContext connection = Create
-            (
-                socket,
-                sendPipeOptions,
-                receivePipeOptions,
-                connectionOptions,
-                featureCollection,
-                name,
-                logger
-            );
-
-            connection.LocalEndPoint = socket.LocalEndPoint;
-            connection.RemoteEndPoint = socket.RemoteEndPoint;
-
-            return connection;
+            return socket;
         }
     }
 }
