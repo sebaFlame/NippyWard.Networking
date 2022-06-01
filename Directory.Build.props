@@ -2,8 +2,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <PropertyGroup>
-    <TraceLog Condition="'$(TraceLog)' == ''">true</TraceLog>
-    <TraceListener Condition="'$(TraceLog)' == 'true' AND '$(TraceListener)' == ''">true</TraceListener>
+    <TraceLog Condition="'$(TraceLog)' == ''">false</TraceLog>
+    <TraceListener Condition="'$(TraceLog)' == 'true' AND '$(TraceListener)' == ''">false</TraceListener>
     <LogByDate Condition="'$(LogByDate)' == ''">false</LogByDate>
   </PropertyGroup>
 
