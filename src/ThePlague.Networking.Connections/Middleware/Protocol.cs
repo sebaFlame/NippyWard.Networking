@@ -60,11 +60,11 @@ namespace ThePlague.Networking.Connections.Middleware
             {
                 regReader = connectionLifetimeFeature
                     .ConnectionClosed
-                    .Register((r) => ((ProtocolReader<TMessage>)r).Complete(new ConnectionAbortedException()), reader, false);
+                    .UnsafeRegister((r) => ((ProtocolReader<TMessage>)r).Complete(new ConnectionAbortedException()), reader);
 
                 regWriter = connectionLifetimeFeature
                     .ConnectionClosed
-                    .Register((w) => ((ProtocolWriter<TMessage>)w).Complete(new ConnectionAbortedException()), writer, false);
+                    .UnsafeRegister((w) => ((ProtocolWriter<TMessage>)w).Complete(new ConnectionAbortedException()), writer);
             }
 
             //set correct connection features

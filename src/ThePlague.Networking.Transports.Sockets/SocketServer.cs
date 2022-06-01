@@ -138,7 +138,7 @@ namespace ThePlague.Networking.Transports.Sockets
             CancellationToken cancellationToken = default(CancellationToken)
         )
         {
-            CancellationTokenRegistration reg = cancellationToken.Register((s) => ((SocketServer)s).Stop(), this, false);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((s) => ((SocketServer)s).Stop(), this);
 
             try
             {

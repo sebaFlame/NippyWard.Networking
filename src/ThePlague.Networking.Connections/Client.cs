@@ -62,7 +62,7 @@ namespace ThePlague.Networking.Connections
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
             //register Cancellation, Client could be executed as a delegate
-            CancellationTokenRegistration reg = cancellationToken.Register(c => ConnectionContextShutdown((ConnectionContext)c), this._connectionContext, false);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext)c), this._connectionContext);
 
             try
             {

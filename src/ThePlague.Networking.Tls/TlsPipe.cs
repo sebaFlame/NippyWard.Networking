@@ -491,7 +491,7 @@ namespace ThePlague.Networking.Tls
 
             //use a Task based one as there could be multiple awaiters
             TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            CancellationTokenRegistration reg = cancellationToken.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), tcs, false);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), tcs);
 
             //do a zero length write
             try

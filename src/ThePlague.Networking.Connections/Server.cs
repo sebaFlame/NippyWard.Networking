@@ -219,7 +219,7 @@ namespace ThePlague.Networking.Connections
             //ensures add to connections collection
             await Task.Yield();
 
-            reg = cancellationToken.Register((c) => ConnectionContextShutdown((ConnectionContext)c), connectionContext, false);
+            reg = cancellationToken.UnsafeRegister((c) => ConnectionContextShutdown((ConnectionContext)c), connectionContext);
 
             try
             {

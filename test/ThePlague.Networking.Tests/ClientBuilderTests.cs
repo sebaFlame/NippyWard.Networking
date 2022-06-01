@@ -165,7 +165,7 @@ namespace ThePlague.Networking.Tests
                                 next =>
                                 async (ConnectionContext ctx) =>
                                 {
-                                    CancellationTokenRegistration reg = ctx.ConnectionClosed.Register((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), clientTerminal, false);
+                                    CancellationTokenRegistration reg = ctx.ConnectionClosed.UnsafeRegister((tcs) => ((TaskCompletionSource)tcs!).SetCanceled(), clientTerminal);
 
                                     try
                                     {
