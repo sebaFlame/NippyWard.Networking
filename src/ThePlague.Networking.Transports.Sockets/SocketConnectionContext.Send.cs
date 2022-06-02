@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
+using Microsoft.AspNetCore.Connections;
 
 namespace ThePlague.Networking.Transports.Sockets
 {
@@ -19,8 +20,8 @@ namespace ThePlague.Networking.Transports.Sockets
             => Interlocked.Read(ref this._totalBytesSent);
 
         private SocketAwaitableEventArgs _writerArgs;
-
         private List<ArraySegment<byte>> _spareBuffer;
+        private long _totalBytesSent;
 
         protected override async Task DoSendAsync()
         {
@@ -29,6 +30,7 @@ namespace ThePlague.Networking.Transports.Sockets
             SocketAwaitableEventArgs writerArgs = null;
             PipeReader reader = this._sendToEndpoint.Reader;
             PipeWriter writer = this._sendToEndpoint.Writer;
+            CancellationToken cancellationToken = this.ConnectionClosed;
             ReadResult result;
             ValueTask<ReadResult> read;
             ReadOnlySequence<byte> buffer;
@@ -89,7 +91,7 @@ namespace ThePlague.Networking.Transports.Sockets
                                 writerArgs,
                                 buffer,
                                 ref this._spareBuffer,
-                                this.ConnectionClosed
+                                cancellationToken
                             );
 
                             this.TraceLog(socketTask.IsCompletedSuccessfully ? "send is sync" : "send is async");
@@ -166,7 +168,18 @@ namespace ThePlague.Networking.Transports.Sockets
 
                 error = ex;
             }
-            catch(Exception ex)
+            catch (OperationCanceledException ex)
+            {
+                if (ex.CancellationToken.Equals(this.ConnectionClosed))
+                {
+                    error = new ConnectionAbortedException();
+                }
+                else
+                {
+                    error = ex;
+                }
+            }
+            catch (Exception ex)
             {
                 this.TrySetShutdown(PipeShutdownKind.WriteException);
 

@@ -7,201 +7,153 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 
-using ThePlague.Networking.Pipelines;
+using ThePlague.Networking.Transports;
 
 namespace ThePlague.Networking.Transports.Pipes
 {
-    internal class NamedPipeConnectionContext
-        : ConnectionContext,
-            IDuplexPipe,
-            IConnectionIdFeature,
-            IConnectionTransportFeature,
-            IConnectionItemsFeature,
-            IConnectionLifetimeFeature,
-            IDisposable
+    internal partial class NamedPipeConnectionContext : TransportConnectionContext
     {
-        public override string ConnectionId { get; set; }
-        public override IFeatureCollection Features { get; }
-        public override IDictionary<object, object> Items { get; set; }
-        public override IDuplexPipe Transport { get; set; }
+        public override PipeReader Input => this._input;
+        public override PipeWriter Output => this._output;
 
-        public PipeReader Input => this._input;
-        public PipeWriter Output => this._output;
-
-        internal readonly PipeStream _InputStream;
-        internal readonly PipeStream _OutputStream;
-
+        private readonly PipeStream _inputStream;
+        private readonly PipeStream _outputStream;
         private readonly WrappedReader _input;
         private readonly WrappedWriter _output;
-
-        //as seen from server
-        internal const string _InputSuffix = "_in";
-        internal const string _OutputSuffix = "_out";
 
         internal NamedPipeConnectionContext
         (
             NamedPipeEndPoint endPoint,
+            Pipe outputPipe,
+            Pipe inputPipe,
             PipeStream outputStream,
             PipeStream inputStream,
-            StreamPipeWriterOptions sendOptions = null,
-            StreamPipeReaderOptions receiveOptions = null,
-            IFeatureCollection serverFeatureCollection = null
+            IFeatureCollection serverFeatureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
-        {
-            this._OutputStream = outputStream;
-            this._InputStream = inputStream;
+            : base
+            (
+                  endPoint,
+                  endPoint,
+                  outputPipe,
+                  inputPipe,
+                  serverFeatureCollection,
+                  name,
+                  logger
 
-            this.ConnectionId = Guid.NewGuid().ToString();
+            )
+        {
             this.RemoteEndPoint = endPoint;
+            this.LocalEndPoint = endPoint;
 
-            this._output = new WrappedWriter
+            this._outputStream = outputStream;
+            this._inputStream = inputStream;
+
+            this._output = new NamedPipeWriter
             (
-                PipeWriter.Create
-                (
-                    outputStream,
-                    sendOptions ?? new StreamPipeWriterOptions(leaveOpen: true)
-                ),
+                outputPipe.Writer,
                 this
             );
 
-            this._input = new WrappedReader
+            this._input = new NamedPipeReader
             (
-                PipeReader.Create
-                (
-                    inputStream,
-                    receiveOptions ?? new StreamPipeReaderOptions(leaveOpen: true)
-                ),
+                inputPipe.Reader,
                 this
             );
-
-            this.Transport = this;
-
-            this.Features = new FeatureCollection(serverFeatureCollection);
-            this.Items = new ConnectionItems();
         }
 
-        ~NamedPipeConnectionContext()
-        {
-            this.Dispose(false);
-        }
-
-        public static async ValueTask<ConnectionContext> ConnectAsync
+        public static TransportConnectionContext Create
         (
             NamedPipeEndPoint endPoint,
-            System.IO.Pipes.PipeOptions pipeOptions
-                = System.IO.Pipes.PipeOptions.Asynchronous,
-            StreamPipeWriterOptions sendOptions = null,
-            StreamPipeReaderOptions receiveOptions = null,
-            IFeatureCollection featureCollection = null
+            PipeStream outputStream,
+            PipeStream inputStream,
+            System.IO.Pipelines.PipeOptions sendPipeOptions = null,
+            System.IO.Pipelines.PipeOptions receivePipeOptions = null,
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null
         )
-        {
-            //use 2 pipes to allow for graceful shutdown
-            NamedPipeClientStream inputStream = new NamedPipeClientStream
-            (
-                endPoint.ServerName,
-                string.Concat(endPoint.PipeName, _OutputSuffix),
-                PipeDirection.In,
-                pipeOptions
-            );
-
-            NamedPipeClientStream outputStream = new NamedPipeClientStream
-            (
-                endPoint.ServerName,
-                string.Concat(endPoint.PipeName, _InputSuffix),
-                PipeDirection.Out,
-                pipeOptions
-            );
-
-            //TODO: exception handling per stream
-            await Task.WhenAll
-            (
-                inputStream.ConnectAsync(),
-                outputStream.ConnectAsync()
-            );
-
-            return new NamedPipeConnectionContext
+            => Create
             (
                 endPoint,
+                new Pipe(sendPipeOptions ?? System.IO.Pipelines.PipeOptions.Default),
+                new Pipe(receivePipeOptions ?? System.IO.Pipelines.PipeOptions.Default),
                 outputStream,
                 inputStream,
-                sendOptions,
-                receiveOptions,
-                featureCollection
+                featureCollection,
+                name,
+                logger
             );
-        }
 
-        internal void CompleteOutput(Exception ex)
-        {
-            this._output.Complete(ex);
-        }
+        public static TransportConnectionContext Create
+        (
+            NamedPipeEndPoint endpoint,
+            Pipe outputPipe,
+            Pipe inputPipe,
+            PipeStream outputStream,
+            PipeStream inputStream,
+            IFeatureCollection featureCollection = null,
+            string name = null,
+            ILogger logger = null
+        )
+            => new NamedPipeConnectionContext
+            (
+                endpoint,
+                outputPipe,
+                inputPipe,
+                outputStream,
+                inputStream,
+                featureCollection,
+                name,
+                logger
+            )
+            .InitializeSendReceiveTasks();
 
-        internal void CompleteInput(Exception ex)
-        {
-            this._input.Complete(ex);
-        }
 
-        public override void Abort(ConnectionAbortedException abortReason)
-        {
-            try
-            {
-                this._output.Complete(abortReason);
-            }
-            catch
-            { }
-
-            try
-            {
-                this._input.Complete(abortReason);
-            }
-            catch
-            { }
-        }
-
-        protected void Dispose(bool isDisposing)
+        internal void InputReaderCompleted()
         {
             try
             {
-                this._output.Complete(new ObjectDisposedException(nameof(NamedPipeConnectionContext)));
+                this._inputStream.Dispose();
             }
             catch
             { }
+        }
 
+        internal void OutputWriterCompleted()
+        {
             try
             {
-                this._input.Complete(new ObjectDisposedException(nameof(NamedPipeConnectionContext)));
+                this._outputStream.Dispose();
             }
             catch
             { }
+        }
 
+        internal ValueTask CompleteOutputAsync(Exception ex)
+            => this._output.CompleteAsync(ex);
+
+        internal ValueTask CompleteInputAsync(Exception ex)
+            => this._input.CompleteAsync(ex);
+
+        protected override void DisposeCore(bool isDisposing)
+        {
             try
             {
-                this._OutputStream.Dispose();
+                this._outputStream.Dispose();
             }
             catch
             { }
             
             try
             {
-                this._InputStream.Dispose();
+                this._inputStream.Dispose();
             }
             catch
             { }
-
-            if(!isDisposing)
-            {
-                return;
-            }
-
-            GC.SuppressFinalize(this);
-        }
-
-        public void Dispose() => this.Dispose(true);
-
-        public override ValueTask DisposeAsync()
-        {
-            this.Dispose(true);
-            return base.DisposeAsync();
         }
     }
 }

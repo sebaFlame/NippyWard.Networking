@@ -60,11 +60,15 @@ namespace ThePlague.Networking.Tests
 
                     try
                     {
+                        //initialize read, or it might complete before you start
+                        //reading
+                        ValueTask<ReadResult> readTask = ctx.Transport.Input.ReadAsync();
+
                         //close connection
                         await ctx.Transport.Output.CompleteAsync();
 
                         //await confirmation close from peer
-                        ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                        ReadResult readResult = await readTask;
                         Assert.True(readResult.IsCompleted);
                         Assert.True(readResult.Buffer.IsEmpty);
                     }
@@ -101,8 +105,15 @@ namespace ThePlague.Networking.Tests
         [MemberData(nameof(GetEndPoint))]
         public async Task ConnectServerCloseTest(NamedPipeEndPoint endpoint)
         {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Server server =  new ServerBuilder(this.ServiceProvider)
-                .UseNamedPipe(endpoint)
+                .UseNamedPipe
+                (
+                    endpoint,
+                    () => $"ConnectServerCloseTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureMaxClients(1)
                 .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .BuildServer();
@@ -112,7 +123,10 @@ namespace ThePlague.Networking.Tests
                 await server.StartAsync();
 
                 Client client = await new ClientBuilder(this.ServiceProvider)
-                    .UseNamedPipe()
+                    .UseNamedPipe
+                    (
+                        () => $"ConnectServerCloseTest_client_{clientIndex++}_{endpoint}"
+                    )
                     .ConfigureConnection((c) => ConfigureCloseListener(c))
                     .BuildClient(endpoint);
 
@@ -127,8 +141,15 @@ namespace ThePlague.Networking.Tests
         [MemberData(nameof(GetEndPoint))]
         public async Task ConnectClientCloseTest(NamedPipeEndPoint endpoint)
         {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             Server server = new ServerBuilder(this.ServiceProvider)
-                .UseNamedPipe(endpoint)
+                .UseNamedPipe
+                (
+                    endpoint,
+                    () => $"ConnectClientCloseTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureMaxClients(1)
                 .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .BuildServer();
@@ -138,7 +159,10 @@ namespace ThePlague.Networking.Tests
                 await server.StartAsync();
 
                 Client client = await new ClientBuilder(this.ServiceProvider)
-                    .UseNamedPipe()
+                    .UseNamedPipe
+                    (
+                        () => $"ConnectClientCloseTest_client_{clientIndex++}_{endpoint}"
+                    )
                     .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                     .BuildClient(endpoint);
 
@@ -153,10 +177,17 @@ namespace ThePlague.Networking.Tests
         [MemberData(nameof(GetEndPoint))]
         public async Task ServerDataTest(NamedPipeEndPoint endpoint)
         {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             byte[] result = new byte[_ServerHello.Length * 2];
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseNamedPipe(endpoint)
+                .UseNamedPipe
+                (
+                    endpoint,
+                    () => $"ServerDataTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -173,6 +204,8 @@ namespace ThePlague.Networking.Tests
                                 writer.Advance(_ServerHello.Length * 2);
 
                                 await writer.FlushAsync();
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -180,7 +213,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseNamedPipe()
+                .UseNamedPipe
+                (
+                    () => $"ServerDataTest_client_{clientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -196,6 +232,8 @@ namespace ThePlague.Networking.Tests
                                 ReadOnlySequence<byte> buffer = readResult.Buffer;
                                 buffer.CopyTo(result);
                                 reader.AdvanceTo(buffer.End);
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -215,10 +253,17 @@ namespace ThePlague.Networking.Tests
         [MemberData(nameof(GetEndPoint))]
         public async Task ClientDataTest(NamedPipeEndPoint endpoint)
         {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
             byte[] result = new byte[_ClientHello.Length * 2];
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseNamedPipe(endpoint)
+                .UseNamedPipe
+                (
+                    endpoint,
+                    () => $"ClientDataTest_server_{serverClientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -234,6 +279,8 @@ namespace ThePlague.Networking.Tests
                                 ReadOnlySequence<byte> buffer = readResult.Buffer;
                                 buffer.CopyTo(result);
                                 reader.AdvanceTo(buffer.End);
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -241,7 +288,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseNamedPipe()
+                .UseNamedPipe
+                (
+                    () => $"ClientDataTest_client_{clientIndex++}_{endpoint}"
+                )
                 .ConfigureConnection
                 (
                     (c) =>
@@ -258,6 +308,8 @@ namespace ThePlague.Networking.Tests
                                 writer.Advance(_ClientHello.Length * 2);
 
                                 await writer.FlushAsync();
+
+                                await next(ctx);
                             }
                         )
                 )

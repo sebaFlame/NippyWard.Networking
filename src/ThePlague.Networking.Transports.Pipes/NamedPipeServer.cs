@@ -7,6 +7,7 @@ using System.IO.Pipes;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Transports.Pipes
 {
@@ -19,29 +20,27 @@ namespace ThePlague.Networking.Transports.Pipes
     {
         public EndPoint EndPoint => this._endPoint;
 
-        private StreamPipeWriterOptions _sendOptions;
-        private StreamPipeReaderOptions _receiveOptions;
+        private System.IO.Pipelines.PipeOptions _sendOptions;
+        private System.IO.Pipelines.PipeOptions _receiveOptions;
         private readonly NamedPipeEndPoint _endPoint;
         private readonly IFeatureCollection _serverFeatureCollection;
+        private readonly ILogger _logger;
+        private readonly Func<string> _createName;
 
         private NamedPipeServerStream _inputStream;
         private NamedPipeServerStream _outputStream;
 
         public NamedPipeServer
         (
-            NamedPipeEndPoint endPoint
+            NamedPipeEndPoint endpoint,
+            IFeatureCollection serverFeatureCollection = null,
+            Func<string> createName = null,
+            ILogger logger = null
         )
         {
-            this._endPoint = endPoint;
-        }
-
-        public NamedPipeServer
-        (
-            NamedPipeEndPoint endPoint,
-            IFeatureCollection serverFeatureCollection
-        )
-            : this(endPoint)
-        {
+            this._endPoint = endpoint;
+            this._createName = createName;
+            this._logger = logger;
             this._serverFeatureCollection = serverFeatureCollection;
         }
 
@@ -56,8 +55,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 = PipeTransmissionMode.Byte,
             System.IO.Pipes.PipeOptions pipeOptions
                 = System.IO.Pipes.PipeOptions.Asynchronous,
-            StreamPipeWriterOptions sendOptions = null,
-            StreamPipeReaderOptions receiveOptions = null
+            System.IO.Pipelines.PipeOptions sendPipeOptions = null,
+            System.IO.Pipelines.PipeOptions receivePipeOptions = null
         )
         {
             NamedPipeEndPoint endpoint = this._endPoint;
@@ -80,8 +79,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 pipeOptions
             );
 
-            this._sendOptions = sendOptions;
-            this._receiveOptions = receiveOptions;
+            this._sendOptions = sendPipeOptions;
+            this._receiveOptions = receivePipeOptions;
         }
 
         /// <summary>
@@ -134,13 +133,16 @@ namespace ThePlague.Networking.Transports.Pipes
                         this._inputStream.WaitForConnectionAsync(cancellationToken)
                     );
 
-                    return new NamedPipeConnectionContext
+                    return NamedPipeConnectionContext.Create
                     (
-                        this._endPoint,
-                        this._outputStream,
-                        this._inputStream,
-                        this._sendOptions,
-                        this._receiveOptions
+                        endPoint: this._endPoint,
+                        outputStream: this._outputStream,
+                        inputStream: this._inputStream,
+                        sendPipeOptions: this._sendOptions,
+                        receivePipeOptions: this._receiveOptions,
+                        featureCollection: this._serverFeatureCollection,
+                        name: this._createName is null ? nameof(NamedPipeServer) : this._createName(),
+                        logger: this._logger
                     );
                 }
                 catch(ObjectDisposedException)

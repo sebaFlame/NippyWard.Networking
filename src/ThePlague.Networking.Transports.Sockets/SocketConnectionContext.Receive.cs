@@ -23,6 +23,7 @@ namespace ThePlague.Networking.Transports.Sockets
         public int LastReceived { get; private set; }
 
         private SocketAwaitableEventArgs _readerArgs;
+        private long _totalBytesReceived;
 
         protected override async Task DoReceiveAsync()
         {
@@ -31,6 +32,7 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeWriter writer = this._receiveFromEndpoint.Writer;
             SocketAwaitableEventArgs readerArgs = null;
             bool zeroLengthReads = this.ZeroLengthReads;
+            CancellationToken cancellationToken = this.ConnectionClosed;
             ValueTask<FlushResult> flushTask;
             FlushResult result;
             Memory<byte> buffer;
@@ -77,7 +79,7 @@ namespace ThePlague.Networking.Transports.Sockets
                             socket,
                             readerArgs,
                             buffer,
-                            this.ConnectionClosed
+                            cancellationToken
                         );
 
                         this.TraceLog(socketTask.IsCompletedSuccessfully ? "receive is sync" : "receive is async");
@@ -217,6 +219,17 @@ namespace ThePlague.Networking.Transports.Sockets
 
                 error = ex;
             }
+            catch (OperationCanceledException ex)
+            {
+                if (ex.CancellationToken.Equals(this.ConnectionClosed))
+                {
+                    error = new ConnectionAbortedException();
+                }
+                else
+                {
+                    error = ex;
+                }
+            }
             catch (Exception ex)
             {
                 this.TrySetShutdown(PipeShutdownKind.ReadException);
@@ -234,7 +247,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 try
                 {
                     this.TraceLog($"shutting down socket-receive");
-                    this.Socket.Shutdown(SocketShutdown.Receive);
+                    socket.Shutdown(SocketShutdown.Receive);
                 }
                 catch { }
 

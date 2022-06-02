@@ -61,14 +61,6 @@ namespace ThePlague.Networking.Transports
         public override IDictionary<object, object?> Items { get; set; }
         public override CancellationToken ConnectionClosed { get => this._connectionClosedTokenSource.Token; set => throw new NotSupportedException(); }
 
-        //values used for speed calculation
-        protected long _totalBytesSent;
-        protected long _totalBytesReceived;
-        protected long _previousTotalBytesSent;
-        protected long _previousTotalBytesReceived;
-        protected long _receiveSpeedInBytes;
-        protected long _sendSpeedInBytes;
-
         protected readonly Pipe _sendToEndpoint;
         protected readonly Pipe _receiveFromEndpoint;
         protected readonly ILogger? _logger;
@@ -76,6 +68,12 @@ namespace ThePlague.Networking.Transports
         private readonly CancellationTokenSource _connectionClosedTokenSource;
         private Task _receiveTask;
         private Task _sendTask;
+
+        //values used for speed calculation
+        private long _previousTotalBytesSent;
+        private long _previousTotalBytesReceived;
+        private long _receiveSpeedInBytes;
+        private long _sendSpeedInBytes;
 
         private static readonly Task _NotStartedTask;
         private static readonly System.Timers.Timer _BandwidthTimer;
@@ -150,7 +148,7 @@ namespace ThePlague.Networking.Transports
 
         private void OnBandwidthEvent(object source, ElapsedEventArgs e)
         {
-            long totalBytesSent = Interlocked.Read(ref this._totalBytesSent);
+            long totalBytesSent = this.BytesSent;
             Interlocked.Exchange
             (
                 ref this._sendSpeedInBytes,
@@ -159,8 +157,7 @@ namespace ThePlague.Networking.Transports
             //should be only thread writing here
             this._previousTotalBytesSent = totalBytesSent;
 
-            long totalBytesReceived
-                = Interlocked.Read(ref this._totalBytesReceived);
+            long totalBytesReceived = this.BytesRead;
             Interlocked.Exchange
             (
                 ref this._receiveSpeedInBytes,

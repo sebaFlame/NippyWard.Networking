@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Connections
 {
@@ -55,7 +56,7 @@ namespace ThePlague.Networking.Connections
 
         ~Server()
         {
-            this._logger.LogTrace($"[Server] finalizer");
+            this._logger.TraceLog("Server", "finalizer");
 
             this.Dispose(false);
         }
@@ -150,7 +151,7 @@ namespace ThePlague.Networking.Connections
 
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    this._logger.LogTrace("[Server] accepted connections");
+                    this._logger.TraceLog("Server", "accepted connections");
 
                     connectionContext.Features.Set<IServerLifetimeFeature>(this);
 
@@ -175,7 +176,7 @@ namespace ThePlague.Networking.Connections
                     || connectionCount < maxClients);
 
                 //only single connection, await it
-                this._logger.LogTrace("[Server] awaiting single connection");
+                this._logger.TraceLog("Server", "awaiting single connection");
                 await this.Connections;
             }
             catch (OperationCanceledException ex)
@@ -186,7 +187,7 @@ namespace ThePlague.Networking.Connections
                 }
 
                 //shutdown has been called, await clients (if any)
-                this._logger.LogTrace("[Server] awaiting connections after shutdown");
+                this._logger.TraceLog("Server", "awaiting connections after shutdown");
                 await this.Connections;
             }
             catch (Exception ex)
@@ -196,7 +197,7 @@ namespace ThePlague.Networking.Connections
             }
             finally
             {
-                this._logger.LogTrace($"[Server] unbinding listener {listenerIndex}");
+                this._logger.TraceLog("Server", $"unbinding listener {listenerIndex}");
                 await connectionListener.UnbindAsync(cancellationToken);
             }
 
@@ -240,7 +241,7 @@ namespace ThePlague.Networking.Connections
             }
             finally
             {
-                logger.LogTrace($"[{connectionContext.ConnectionId}] disposing client");
+                logger.TraceLog($"{connectionContext.ConnectionId}", "disposing client");
 
                 reg.Dispose();
 

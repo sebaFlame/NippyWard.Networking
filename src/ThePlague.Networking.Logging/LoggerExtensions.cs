@@ -40,7 +40,15 @@ namespace ThePlague.Networking.Logging
             [CallerMemberName] string? caller = null,
             [CallerLineNumber] int lineNumber = 0
         )
-            => TraceLog(logger, identifier, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+            => TraceLog
+            (
+                logger,
+                identifier,
+                message,
+                string.IsNullOrEmpty(file) || string.IsNullOrEmpty(caller) 
+                    ? string.Empty
+                    : $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}"
+            );
 
         private static void TraceLog
         (

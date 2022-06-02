@@ -12,6 +12,8 @@ using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
+using ThePlague.Networking.Logging;
+
 namespace ThePlague.Networking.Connections
 {
     public class Client : IHostedService, IDisposable, IAsyncDisposable
@@ -35,7 +37,7 @@ namespace ThePlague.Networking.Connections
 
         ~Client()
         {
-            this._logger.LogTrace($"[{this._connectionContext.ConnectionId}] finalizer");
+            this._logger.TraceLog(this._connectionContext.ConnectionId ,"client finalizer");
 
             this.Dispose(false);
         }
@@ -82,7 +84,7 @@ namespace ThePlague.Networking.Connections
             }
             finally
             {
-                this._logger.LogTrace($"[{this._connectionContext.ConnectionId}] disposing client");
+                this._logger.TraceLog(this._connectionContext.ConnectionId, "disposing client");
 
                 reg.Dispose();
 
