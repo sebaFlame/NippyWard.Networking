@@ -67,7 +67,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 cancellationToken
             );
 
-            SocketConnectionContext connection = Create
+            TransportConnectionContext connection = Create
             (
                 socket,
                 connectionOptions,
@@ -112,7 +112,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 cancellationToken
             );
 
-            SocketConnectionContext connection = Create
+            TransportConnectionContext connection = Create
             (
                 socket,
                 sendToSocket,

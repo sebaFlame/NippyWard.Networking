@@ -13,25 +13,22 @@ namespace ThePlague.Networking.Transports.Sockets
     public partial class SocketConnectionContext
     {
         /// <summary>
-        /// The total number of bytes sent to the socket
+        /// The total number of bytes sent
         /// </summary>
-        public long BytesSent => Interlocked.Read(ref this._totalBytesSent);
-
-        long IMeasuredDuplexPipe.TotalBytesSent => this.BytesSent;
-
-        private long _totalBytesSent;
+        public override long BytesSent
+            => Interlocked.Read(ref this._totalBytesSent);
 
         private SocketAwaitableEventArgs _writerArgs;
 
         private List<ArraySegment<byte>> _spareBuffer;
 
-        private async Task DoSendAsync()
+        protected override async Task DoSendAsync()
         {
             Exception error = null;
             Socket socket = this.Socket;
             SocketAwaitableEventArgs writerArgs = null;
-            PipeReader reader = this._sendToSocket.Reader;
-            PipeWriter writer = this._sendToSocket.Writer;
+            PipeReader reader = this._sendToEndpoint.Reader;
+            PipeWriter writer = this._sendToEndpoint.Writer;
             ReadResult result;
             ValueTask<ReadResult> read;
             ReadOnlySequence<byte> buffer;

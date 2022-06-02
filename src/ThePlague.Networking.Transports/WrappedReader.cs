@@ -3,47 +3,25 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Transports.Sockets
+namespace ThePlague.Networking.Transports
 {
-    internal sealed class WrappedReader : PipeReader
+    public abstract class WrappedReader : PipeReader
     {
-        private readonly PipeReader _reader;
-        private readonly SocketConnectionContext _connection;
+        protected readonly PipeReader _reader;
 
         public WrappedReader
         (
-            PipeReader reader,
-            SocketConnectionContext connection
+            PipeReader reader
         )
         {
             this._reader = reader;
-            this._connection = connection;
         }
 
-        public override void Complete(Exception exception = null)
-        {
-            this._connection.InputReaderCompleted(exception);
-            this._reader.Complete(exception);
-        }
+        public override void Complete(Exception? exception = null)
+            => this._reader.Complete(exception);
 
-        public override ValueTask CompleteAsync(Exception exception = null)
-        {
-            try
-            {
-                this.Complete(exception);
-            }
-            catch
-            { }
-
-            if (this._connection._receiveTask is null)
-            {
-                return default;
-            }
-
-            //await the send thread
-            //use a task, so it can be awaited on multiple times
-            return new ValueTask(this._connection._receiveTask);
-        }
+        public override ValueTask CompleteAsync(Exception? exception = null)
+            => this._reader.CompleteAsync(exception);
 
         public override void AdvanceTo(SequencePosition consumed)
             => this._reader.AdvanceTo(consumed);
@@ -71,8 +49,8 @@ namespace ThePlague.Networking.Transports.Sockets
         [Obsolete]
         public override void OnWriterCompleted
         (
-            Action<Exception, object> callback,
-            object state
+            Action<Exception?, object?> callback,
+            object? state
         )
             => this._reader.OnWriterCompleted(callback, state);
     }

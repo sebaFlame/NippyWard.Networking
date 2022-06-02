@@ -11,27 +11,24 @@ namespace ThePlague.Networking.Transports.Sockets
 {
     public partial class SocketConnectionContext
     {
-        private SocketAwaitableEventArgs _readerArgs;
-
         /// <summary>
-        /// The total number of bytes read from the socket
+        /// The total number of bytes read
         /// </summary>
-        public long BytesRead => Interlocked.Read(ref this._totalBytesReceived);
+        public override long BytesRead
+            => Interlocked.Read(ref this._totalBytesReceived);
 
         /// <summary>
         /// The number of bytes received in the last read
         /// </summary>
         public int LastReceived { get; private set; }
 
-        private long _totalBytesReceived;
+        private SocketAwaitableEventArgs _readerArgs;
 
-        long IMeasuredDuplexPipe.TotalBytesReceived => this.BytesRead;
-
-        private async Task DoReceiveAsync()
+        protected override async Task DoReceiveAsync()
         {
             Exception error = null;
             Socket socket = this.Socket;
-            PipeWriter writer = this._receiveFromSocket.Writer;
+            PipeWriter writer = this._receiveFromEndpoint.Writer;
             SocketAwaitableEventArgs readerArgs = null;
             bool zeroLengthReads = this.ZeroLengthReads;
             ValueTask<FlushResult> flushTask;

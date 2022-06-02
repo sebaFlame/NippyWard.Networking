@@ -16,6 +16,7 @@ using OpenSSL.Core.Keys;
 
 using ThePlague.Networking.Connections;
 using ThePlague.Networking.Connections.Middleware;
+using ThePlague.Networking.Transports;
 using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Tls;
 

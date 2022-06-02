@@ -3,21 +3,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.IO.Pipelines;
 
-namespace ThePlague.Networking.Transports.Sockets
+namespace ThePlague.Networking.Transports
 {
-    internal sealed class WrappedWriter : PipeWriter
+    public abstract class WrappedWriter : PipeWriter
     {
-        private readonly PipeWriter _writer;
-        private readonly SocketConnectionContext _connection;
+        protected readonly PipeWriter _writer;
 
         public WrappedWriter
         (
-            PipeWriter writer,
-            SocketConnectionContext connection
+            PipeWriter writer
         )
         {
             this._writer = writer;
-            this._connection = connection;
         }
 
         public override bool CanGetUnflushedBytes
@@ -26,30 +23,11 @@ namespace ThePlague.Networking.Transports.Sockets
         public override long UnflushedBytes
             => this._writer.UnflushedBytes;
 
-        public override void Complete(Exception exception = null)
-        {
-            this._connection.OutputWriterCompleted(exception);
-            this._writer.Complete(exception);
-        }
+        public override void Complete(Exception? exception = null)
+            => this._writer.Complete(exception);
 
-        public override ValueTask CompleteAsync(Exception exception = null)
-        {
-            try
-            {
-                this.Complete(exception);
-            }
-            catch
-            { }
-
-            if(this._connection._sendTask is null)
-            {
-                return default;
-            }
-
-            //await the send thread
-            //use a task, so it can be awaited on multiple times
-            return new ValueTask(this._connection._sendTask);
-        }
+        public override ValueTask CompleteAsync(Exception? exception = null)
+            => this._writer.CompleteAsync(exception);
 
         public override void Advance(int bytes)
             => this._writer.Advance(bytes);
@@ -80,8 +58,8 @@ namespace ThePlague.Networking.Transports.Sockets
         [Obsolete]
         public override void OnReaderCompleted
         (
-            Action<Exception, object> callback,
-            object state
+            Action<Exception?, object?> callback,
+            object? state
         )
             => this._writer.OnReaderCompleted(callback, state);
     }

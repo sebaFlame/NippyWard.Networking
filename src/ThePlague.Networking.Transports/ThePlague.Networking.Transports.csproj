@@ -1,7 +1,8 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,7 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ThePlague.Networking.Transports\ThePlague.Networking.Transports.csproj" />
+    <ProjectReference Include="..\ThePlague.Networking.Pipelines\ThePlague.Networking.Pipelines.csproj" />
+    <ProjectReference Include="..\ThePlague.Networking.Connections\ThePlague.Networking.Connections.csproj" />
     <ProjectReference Include="..\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
   </ItemGroup>
+
 </Project>
