@@ -21,9 +21,11 @@ namespace ThePlague.Networking.Transports.Pipes
 
         private StreamPipeWriterOptions _sendOptions;
         private StreamPipeReaderOptions _receiveOptions;
-        private NamedPipeServerStream _stream;
         private readonly NamedPipeEndPoint _endPoint;
         private readonly IFeatureCollection _serverFeatureCollection;
+
+        private NamedPipeServerStream _inputStream;
+        private NamedPipeServerStream _outputStream;
 
         public NamedPipeServer
         (
@@ -48,7 +50,6 @@ namespace ThePlague.Networking.Transports.Pipes
         /// </summary>
         internal void Bind
         (
-            PipeDirection pipeDirection = PipeDirection.InOut,
             int maxAllowedServerInstances
                 = NamedPipeServerStream.MaxAllowedServerInstances,
             PipeTransmissionMode pipeTransmissionMode
@@ -61,10 +62,19 @@ namespace ThePlague.Networking.Transports.Pipes
         {
             NamedPipeEndPoint endpoint = this._endPoint;
 
-            this._stream = new NamedPipeServerStream
+            this._outputStream = new NamedPipeServerStream
             (
-                endpoint.PipeName,
-                pipeDirection,
+                string.Concat(endpoint.PipeName, NamedPipeConnectionContext._OutputSuffix),
+                PipeDirection.Out,
+                maxAllowedServerInstances,
+                pipeTransmissionMode,
+                pipeOptions
+            );
+
+            this._inputStream = new NamedPipeServerStream
+            (
+                string.Concat(endpoint.PipeName, NamedPipeConnectionContext._InputSuffix),
+                PipeDirection.In,
                 maxAllowedServerInstances,
                 pipeTransmissionMode,
                 pipeOptions
@@ -79,17 +89,31 @@ namespace ThePlague.Networking.Transports.Pipes
         /// </summary>
         public void Stop()
         {
-            NamedPipeServerStream stream = this._stream;
-            this._stream = null;
+            NamedPipeServerStream output = this._outputStream;
+            this._outputStream = null;
 
-            if(stream is null)
+            if(output is null)
             {
                 return;
             }
 
             try
             {
-                stream.Dispose();
+                output.Dispose();
+            }
+            catch { }
+
+            NamedPipeServerStream input = this._inputStream;
+            this._outputStream = null;
+
+            if (input is null)
+            {
+                return;
+            }
+
+            try
+            {
+                input.Dispose();
             }
             catch { }
         }
@@ -103,12 +127,18 @@ namespace ThePlague.Networking.Transports.Pipes
             {
                 try
                 {
-                    await this._stream.WaitForConnectionAsync(cancellationToken);
+                    //TODO: exception handling per stream
+                    await Task.WhenAll
+                    (
+                        this._outputStream.WaitForConnectionAsync(cancellationToken),
+                        this._inputStream.WaitForConnectionAsync(cancellationToken)
+                    );
 
                     return new NamedPipeConnectionContext
                     (
-                        this._stream,
                         this._endPoint,
+                        this._outputStream,
+                        this._inputStream,
                         this._sendOptions,
                         this._receiveOptions
                     );
