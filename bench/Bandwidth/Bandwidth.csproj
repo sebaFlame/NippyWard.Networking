@@ -25,10 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\BenchMark\LegacySsl\*.cs" />
-    <Compile Include="..\BenchMark\StreamConnectionContext.cs" />
-    <Compile Include="..\BenchMark\BenchmarkExtensions.cs" />
-    <Compile Include="..\BenchMark\IStreamFeature.cs" />
+    <Compile Include="..\Benchmark\LegacySsl\*.cs" />
+    <Compile Include="..\Benchmark\StreamConnectionContext.cs" />
+    <Compile Include="..\Benchmark\BenchmarkExtensions.cs" />
+    <Compile Include="..\Benchmark\IStreamFeature.cs" />
   </ItemGroup>
 
 </Project>
