@@ -24,8 +24,7 @@ namespace ThePlague.Networking.Tests
 {
     /* TODO
      * clean disposal (when aborted) */
-    [Collection("logging")]
-    public class SocketTlsTests : BaseSocketDataTests, IDisposable
+    public class TlsTests : BaseDataTests, IDisposable
     {
         private X509Certificate ServerCertificate => this._tlsState.ServerCertificate;
         private PrivateKey ServerKey => this.ServerCertificate.PublicKey;
@@ -37,7 +36,7 @@ namespace ThePlague.Networking.Tests
 
         private TlsState _tlsState;
 
-        public SocketTlsTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
+        public TlsTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
             : base(serviceState, testOutputHelper)
         {
             this._tlsState = new TlsState();
@@ -61,8 +60,8 @@ namespace ThePlague.Networking.Tests
             );
 
         [Theory]
-        [MemberData(nameof(GetEndPoint))]
-        public async Task ServerRenegotiateTest(EndPoint endpoint)
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Server_Init_Renegotiate(EndPoint endpoint)
         {
             //Force TLS1.2 to enforce a real renegotiation 
 
@@ -71,10 +70,10 @@ namespace ThePlague.Networking.Tests
             string nameSuffix = $"{endpoint}";
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
                     endpoint,
-                    () => $"ServerRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
+                    () => $"Server_Init_Renegotiate_server_{serverClientIndex++}_{nameSuffix}"
                 )
                 .ConfigureConnection
                 (
@@ -116,9 +115,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
-                    () => $"ServerRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
+                    endpoint,
+                    () => $"Server_Init_Renegotiate_client_{clientIndex++}_{nameSuffix}"
                 )
                 .ConfigureConnection
                 (
@@ -153,7 +153,7 @@ namespace ThePlague.Networking.Tests
 
         [Theory]
         [MemberData(nameof(GetEndPointAnd1MBTestSize))]
-        public async Task DuplexRenegotiateTest(EndPoint endpoint, int maxBufferSize, int testSize)
+        public async Task Duplex_Data_Server_Init_Renegotiate(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             //Force TLS1.2 to enforce a real renegotiation 
 
@@ -172,10 +172,10 @@ namespace ThePlague.Networking.Tests
             string nameSuffix = $"{endpoint}_{maxBufferSize}_{testSize}";
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
                     endpoint,
-                    () => $"DuplexRenegotiateTest_server_{serverClientIndex++}_{nameSuffix}"
+                    () => $"Duplex_Data_Server_Init_Renegotiate_server_{serverClientIndex++}_{nameSuffix}"
                 )
                 .ConfigureConnection
                 (
@@ -249,9 +249,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
-                    () => $"DuplexRenegotiateTest_client_{clientIndex++}_{nameSuffix}"
+                    endpoint,
+                    () => $"Duplex_Data_Server_Init_Renegotiate_client_{clientIndex++}_{nameSuffix}"
                 )
                 .ConfigureConnection
                 (
@@ -316,17 +317,17 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoint))]
-        public async Task ClientShutdownTest(EndPoint endpoint)
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Client_Init_Shutdown(EndPoint endpoint)
         {
             int serverClientIndex = 0;
             int clientIndex = 0;
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
                     endpoint,
-                    () => $"ClientShutdownTest_server_{serverClientIndex++}"
+                    () => $"Client_Init_Shutdown_server_{serverClientIndex++}"
                 )
                 .ConfigureConnection
                 (
@@ -357,9 +358,10 @@ namespace ThePlague.Networking.Tests
                 .BuildSingleClient();
 
             Task clientTask = new ClientBuilder(this.ServiceProvider)
-                .UseSocket
+                .ConfigureEndpoint
                 (
-                    () => $"ClientShutdownTest_client_{clientIndex++}"
+                    endpoint,
+                    () => $"Client_Init_Shutdown_client_{clientIndex++}"
                 )
                 .ConfigureConnection
                 (

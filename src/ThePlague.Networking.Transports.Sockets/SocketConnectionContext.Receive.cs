@@ -27,6 +27,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         protected override async Task DoReceiveAsync()
         {
+            await Task.Yield();
+
             Exception error = null;
             Socket socket = this.Socket;
             PipeWriter writer = this._receiveFromEndpoint.Writer;
@@ -257,7 +259,7 @@ namespace ThePlague.Networking.Transports.Sockets
                 this.TraceLog($"marking {nameof(this.Input)} as complete");
                 try
                 {
-                    writer.Complete(error);
+                    await writer.CompleteAsync(error);
                 }
                 catch
                 { }

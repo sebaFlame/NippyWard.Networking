@@ -7,9 +7,9 @@ using ThePlague.Networking.Connections;
 
 namespace ThePlague.Networking.Tests
 {
-    public class SocketDataTests : BaseSocketDataTests
+    public class DataTests : BaseDataTests
     {
-        public SocketDataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
+        public DataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
             : base(serviceState, testOutputHelper)
         { }
 

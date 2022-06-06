@@ -1,9 +1,13 @@
 ﻿using System.Net;
+using System.Net.Sockets;
 
 namespace ThePlague.Networking.Transports.Pipes
 {
     public class NamedPipeEndPoint : EndPoint
     {
+        public override AddressFamily AddressFamily
+            => AddressFamily.Unspecified;
+
         public string ServerName { get; }
         public string PipeName { get; }
 

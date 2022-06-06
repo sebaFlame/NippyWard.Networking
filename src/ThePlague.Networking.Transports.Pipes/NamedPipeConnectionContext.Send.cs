@@ -25,6 +25,8 @@ namespace ThePlague.Networking.Transports.Pipes
 
         protected override async Task DoSendAsync()
         {
+            await Task.Yield();
+
             Exception error = null;
             PipeStream outputStream = this._outputStream;
             PipeReader reader = this._sendToEndpoint.Reader;
@@ -85,14 +87,14 @@ namespace ThePlague.Networking.Transports.Pipes
                                 cancellationToken
                             );
 
-                            this.TraceLog(outputTask.IsCompletedSuccessfully ? "send is sync" : "send is async");
-
                             if (outputTask.IsCompletedSuccessfully)
                             {
+                                this.TraceLog("send is sync");
                                 bytesSent = outputTask.Result;
                             }
                             else
                             {
+                                this.TraceLog("send is async");
                                 bytesSent = await outputTask;
                             }
 
@@ -114,6 +116,8 @@ namespace ThePlague.Networking.Transports.Pipes
                         reader.AdvanceTo(buffer.End);
                     }
                 }
+
+                outputStream.WaitForPipeDrain();
             }
             catch (ObjectDisposedException)
             {
@@ -149,23 +153,24 @@ namespace ThePlague.Networking.Transports.Pipes
                 try
                 {
                     this.TraceLog($"shutting down named pipe send");
-                    await outputStream.DisposeAsync();
+                    outputStream.Close();
                 }
-                catch { }
+                catch
+                { }
 
                 // close *both halves* of the send pipe; we're not
                 // listening *and* we don't want anyone trying to write
                 this.TraceLog($"marking {nameof(this.Output)} as complete");
                 try
                 {
-                    writer.Complete(error);
+                    await writer.CompleteAsync(error);
                 }
                 catch
                 { }
 
                 try
                 {
-                    reader.Complete(error);
+                    await reader.CompleteAsync(error);
                 }
                 catch
                 { }
@@ -202,6 +207,8 @@ namespace ThePlague.Networking.Transports.Pipes
                     await task;
                 }
             }
+
+            await pipeStream.FlushAsync();
 
             return (int)buffer.Length;
         }

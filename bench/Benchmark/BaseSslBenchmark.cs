@@ -13,6 +13,7 @@ using System.Net.NetworkInformation;
 using System.Net;
 using System.Buffers;
 using System.Text.Encodings;
+using System.Text;
 
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Running;
@@ -30,7 +31,6 @@ using ThePlague.Networking.Connections;
 using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Tls;
 using Benchmark.LegacySsl;
-using System.Text;
 
 namespace Benchmark
 {

@@ -192,6 +192,9 @@ namespace ThePlague.Networking.Tests
 
                 //check if the cancellation gets thrown, because it does not get caught
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(() => clientTask);
+
+                //ensure RunAsync ends, before calling shutdown in disposal
+                await server.RunAsync();
             }
         }
 
@@ -255,6 +258,9 @@ namespace ThePlague.Networking.Tests
                     //ensure client is connected
                     await clientConnected.Task;
                 }
+
+                //ensure RunAsync ends, before calling shutdown in disposal
+                await server.RunAsync();
             }
 
             Assert.True(clientTerminal.Task.IsCompletedSuccessfully);

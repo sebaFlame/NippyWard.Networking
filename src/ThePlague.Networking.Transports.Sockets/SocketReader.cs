@@ -27,7 +27,7 @@ namespace ThePlague.Networking.Transports.Sockets
         public override void Complete(Exception exception = null)
         {
             this._connection.InputReaderCompleted(exception);
-            this._reader.Complete(exception);
+            base.Complete(exception);
         }
 
         public override async ValueTask CompleteAsync(Exception exception = null)

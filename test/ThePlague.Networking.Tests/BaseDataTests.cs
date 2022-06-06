@@ -21,10 +21,7 @@ using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Tests
 {
-    /*
-     * https://docs.microsoft.com/en-us/windows/win32/winsock/graceful-shutdown-linger-options-and-socket-closure-2
-     */
-    public abstract class BaseSocketDataTests : BaseSocketTests
+    public abstract class BaseDataTests : BaseSocketTests
     {
         private const string _ServerHello = "Hello Client";
         private const string _ClientHello = "Hello Server";
@@ -32,11 +29,11 @@ namespace ThePlague.Networking.Tests
         private ITestOutputHelper _testOutputHelper;
         protected readonly ILogger _logger;
 
-        public BaseSocketDataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
+        public BaseDataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
             : base(serviceState)
         {
             this._testOutputHelper = testOutputHelper;
-            this._logger = this.ServiceProvider.CreateLogger<BaseSocketDataTests>();
+            this._logger = this.ServiceProvider.CreateLogger<BaseDataTests>();
         }
 
         protected static async Task<int> RandomDataSender
@@ -321,8 +318,8 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoint))]
-        public async Task ServerDataTest(EndPoint endpoint)
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Server_Data_Send_And_Server_Close(EndPoint endpoint)
         {
             byte[] result = new byte[_ServerHello.Length * 2];
 
@@ -334,11 +331,11 @@ namespace ThePlague.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            endpoint,
-                            () => $"{namePrefix}_ServerDataTest_server_{serverClientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Server_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -358,26 +355,21 @@ namespace ThePlague.Networking.Tests
 
                                 await writer.FlushAsync();
 
-                                //send close to client
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //await close completion
-                                readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            () => $"{namePrefix}_ServerDataTest_client_{clientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Server_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -392,19 +384,18 @@ namespace ThePlague.Networking.Tests
                                 ReadResult readResult = await reader.ReadAsync();
 
                                 ReadOnlySequence<byte> buffer = readResult.Buffer;
+
+                                //Assert.False(readResult.IsCompleted);
+                                Assert.False(buffer.IsEmpty);
+
                                 buffer.CopyTo(result);
                                 reader.AdvanceTo(buffer.End);
 
-                                //await close from server
-                                readResult = await reader.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-
-                                //send close to server
-                                await ctx.Transport.Output.CompleteAsync();
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -417,8 +408,8 @@ namespace ThePlague.Networking.Tests
         }
 
         [Theory]
-        [MemberData(nameof(GetEndPoint))]
-        public async Task ClientDataTest(EndPoint endpoint)
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Client_Data_Send_And_Client_Close(EndPoint endpoint)
         {
             byte[] result = new byte[_ClientHello.Length * 2];
 
@@ -430,10 +421,10 @@ namespace ThePlague.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket
+                        .ConfigureEndpoint
                         (
                             endpoint,
-                            () => $"{namePrefix}_ClientDataTest_server_{serverClientIndex++}_{nameSuffix}"
+                            () => $"{namePrefix}_Client_Data_Send_And_Client_Close_server_{serverClientIndex++}_{nameSuffix}"
                         )
                 )
                 .ConfigureConnection
@@ -449,30 +440,27 @@ namespace ThePlague.Networking.Tests
                                 ReadResult readResult = await reader.ReadAsync();
 
                                 ReadOnlySequence<byte> buffer = readResult.Buffer;
+
+                                Assert.False(buffer.IsEmpty);
+
                                 buffer.CopyTo(result);
                                 reader.AdvanceTo(buffer.End);
 
-                                //await close from server
-                                readResult = await reader.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-
-                                //send close to server
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //close receive
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            () => $"{namePrefix}_ClientDataTest_client_{clientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Client_Data_Send_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -492,19 +480,11 @@ namespace ThePlague.Networking.Tests
 
                                 await writer.FlushAsync();
 
-                                //send close to server
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //await close from server
-                                readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-
-                                //close receive
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
-
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -518,7 +498,7 @@ namespace ThePlague.Networking.Tests
 
         [Theory]
         [MemberData(nameof(GetEndPointAnd1MBTestSize))]
-        public async Task ServerWriteCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
+        public async Task Server_Random_Data_Send_And_Server_Close(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
             byte[] sent = new byte[testSize];
@@ -532,11 +512,11 @@ namespace ThePlague.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            endpoint,
-                            () => $"{namePrefix}_ServerWriteCloseRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -556,28 +536,21 @@ namespace ThePlague.Networking.Tests
                                     this._logger
                                 );
 
-                                //close writer and send close to client
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //await close from client
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                //close reader
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            () => $"{namePrefix}_ServerWriteCloseRandomDataTest_client_{clientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -596,17 +569,11 @@ namespace ThePlague.Networking.Tests
                                     this._logger
                                 );
 
-                                //done reading, should not block
-                                //close got received during RandomDataReceiver
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                await ctx.Transport.Output.CompleteAsync();
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -619,7 +586,7 @@ namespace ThePlague.Networking.Tests
 
         [Theory]
         [MemberData(nameof(GetEndPointAnd1MBTestSize))]
-        public async Task ClientReadCloseRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
+        public async Task Client_Random_Data_Read_And_Client_Close(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int bytesSent = 0, bytesReceived = 0;
             byte[] sent = new byte[testSize];
@@ -634,11 +601,11 @@ namespace ThePlague.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            endpoint,
-                            () => $"{namePrefix}_ClientReadCloseRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_server_{serverClientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -683,13 +650,10 @@ namespace ThePlague.Networking.Tests
 
                                 Assert.True(readResult.IsCompleted);
 
-                                //verify close
-                                readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
                                 //done reading
                                 await reader.CompleteAsync();
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -698,10 +662,11 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            () => $"{namePrefix}_ClientReadCloseRandomDataTest_client_{clientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -740,6 +705,8 @@ namespace ThePlague.Networking.Tests
 
                                 //due to close receievd from server through ReadAsync
                                 await ctx.Transport.Input.CompleteAsync();
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -755,7 +722,7 @@ namespace ThePlague.Networking.Tests
 
         [Theory]
         [MemberData(nameof(GetEndPointAnd1MBTestSize))]
-        public async Task DuplexRandomDataTest(EndPoint endpoint, int maxBufferSize, int testSize)
+        public async Task Duplex_Random_Data(EndPoint endpoint, int maxBufferSize, int testSize)
         {
             int serverBytesSent = 0, serverBytesReceived = 0;
             int clientBytesSent = 0, clientBytesReceived = 0;
@@ -775,11 +742,11 @@ namespace ThePlague.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            endpoint,
-                            () => $"{namePrefix}_DuplexRandomDataTest_server_{serverClientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Duplex_Random_Data_server_{serverClientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -828,6 +795,8 @@ namespace ThePlague.Networking.Tests
                                 {
                                     await ctx.Transport.Input.CompleteAsync();
                                 }
+
+                                await next(ctx);
                             }
                         )
                 )
@@ -836,10 +805,11 @@ namespace ThePlague.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                        .UseSocket
-                        (
-                            () => $"{namePrefix}_DuplexRandomDataTest_client_{clientIndex++}_{nameSuffix}"
-                        )
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"{namePrefix}_Duplex_Random_Data_client_{clientIndex++}_{nameSuffix}"
+                    )
                 )
                 .ConfigureConnection
                 (
@@ -886,6 +856,8 @@ namespace ThePlague.Networking.Tests
                                 Assert.Equal(0, readResult.Buffer.Length);
 
                                 await ctx.Transport.Input.CompleteAsync();
+
+                                await next(ctx);
                             }
                         )
                 )

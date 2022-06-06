@@ -29,15 +29,15 @@ namespace ThePlague.Networking.Transports.Pipes
         public override void Complete(Exception exception = null)
         {
             this._connection.InputReaderCompleted();
-            this._reader.Complete(exception);
+            base.Complete(exception);
         }
 
         public override async ValueTask CompleteAsync(Exception exception = null)
         {
-            this._connection.InputReaderCompleted();
-
             try
             {
+                this._connection.InputReaderCompleted();
+
                 //could dispose stream
                 //does a flush
                 await this._reader.CompleteAsync(exception);
@@ -57,7 +57,7 @@ namespace ThePlague.Networking.Transports.Pipes
         //    {
         //        return await this._reader.ReadAsync(cancellationToken);
         //    }
-        //    catch(IOException ex)
+        //    catch (IOException ex)
         //    {
         //        await this._connection.CompleteOutputAsync(ex);
         //        throw;

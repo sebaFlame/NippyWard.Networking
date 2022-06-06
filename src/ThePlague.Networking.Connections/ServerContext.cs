@@ -21,12 +21,12 @@ namespace ThePlague.Networking.Connections
         /// Configure the <see cref="Server"/> to only allow <see cref="MaxClients"/> clients.
         /// A value of 0 allow unlimited.
         /// </summary>
-        public uint MaxClients { get; set; }
+        public uint MaxClients { get; set; } = uint.MaxValue;
 
         /// <summary>
         /// Seconds to wait for connections to "gracefully" close
         /// </summary>
-        public uint TimeOut { get; set; }
+        public uint TimeOut { get; set; } = 10;
 
         public ServerContext()
         {

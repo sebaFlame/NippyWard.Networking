@@ -258,6 +258,9 @@ namespace ThePlague.Networking.Tests
 
                 //check if all clients have connected to server
                 Assert.Equal(maxClient, serverCount);
+
+                //ensure RunAsync ends, before calling shutdown in disposal
+                await server.RunAsync();
             }
         }
     }

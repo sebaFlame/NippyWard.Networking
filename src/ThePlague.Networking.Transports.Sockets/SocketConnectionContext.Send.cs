@@ -25,6 +25,8 @@ namespace ThePlague.Networking.Transports.Sockets
 
         protected override async Task DoSendAsync()
         {
+            await Task.Yield();
+
             Exception error = null;
             Socket socket = this.Socket;
             SocketAwaitableEventArgs writerArgs = null;
@@ -205,14 +207,14 @@ namespace ThePlague.Networking.Transports.Sockets
                 this.TraceLog($"marking {nameof(this.Output)} as complete");
                 try
                 {
-                    writer.Complete(error);
+                    await writer.CompleteAsync(error);
                 }
                 catch
                 { }
 
                 try
                 {
-                    reader.Complete(error);
+                    await reader.CompleteAsync(error);
                 }
                 catch
                 { }

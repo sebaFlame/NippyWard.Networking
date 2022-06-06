@@ -114,24 +114,10 @@ namespace ThePlague.Networking.Transports.Pipes
 
 
         internal void InputReaderCompleted()
-        {
-            try
-            {
-                this._inputStream.Dispose();
-            }
-            catch
-            { }
-        }
+        { }
 
         internal void OutputWriterCompleted()
-        {
-            try
-            {
-                this._outputStream.Dispose();
-            }
-            catch
-            { }
-        }
+        { }
 
         internal ValueTask CompleteOutputAsync(Exception ex)
             => this._output.CompleteAsync(ex);

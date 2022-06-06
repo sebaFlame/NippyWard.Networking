@@ -204,17 +204,23 @@ namespace ThePlague.Networking.Tls
                         }
 
                         buffer = readResult.Buffer;
+                        read = buffer.Start;
 
-                        this.TraceLog($"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
+                        try
+                        {
+                            this.TraceLog($"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
 
-                        sslState = ssl.ReadSsl
-                        (
-                            buffer,
-                            decryptedReadBuffer,
-                            out read
-                        );
-
-                        pipeReader.AdvanceTo(read);
+                            sslState = ssl.ReadSsl
+                            (
+                                buffer,
+                                decryptedReadBuffer,
+                                out read
+                            );
+                        }
+                        finally
+                        {
+                            pipeReader.AdvanceTo(read);
+                        }
 
                         if (readResult.IsCanceled)
                         {
@@ -325,54 +331,54 @@ namespace ThePlague.Networking.Tls
         {
             ReadResult tlsResult;
             ReadOnlySequence<byte> buffer = readResult.Buffer;
-            SequencePosition readPosition;
+            SequencePosition readPosition = buffer.Start;
+            SslState sslState;
 
-            SslState sslState = this.ProcessReadResult
-            (
-                in buffer,
-                out readPosition
-            );
-
-            if (readResult.IsCompleted
-                || readResult.IsCanceled)
+            try
             {
-                //advance when completed, to remove reading state
-                //advance only in reverse conditions of ProcessReadResult
-                if (buffer.IsEmpty
-                    || buffer.Start.Equals(readPosition))
+                sslState = this.ProcessReadResult
+                (
+                    in buffer,
+                    out readPosition
+                );
+            }
+            finally
+            {
+                //always advance, to remove reading state
+                this._innerReader.AdvanceTo(readPosition);
+            }
+
+            if(!readResult.IsCompleted)
+            {
+                //finish shutdown
+                if (sslState.IsShutdown())
                 {
-                    this._innerReader.AdvanceTo(buffer.Start);
+                    this.TraceLog("shutdown during read requested");
+                    return this.ShutdownDuringReadAsync
+                    (
+                        buffer.IsEmpty || buffer.End.Equals(readPosition),
+                        cancellationToken
+                    );
                 }
-            }
 
-            //finish shutdown
-            if (sslState.IsShutdown())
-            {
-                this.TraceLog("shutdown during read requested");
-                return this.ShutdownDuringReadAsync
-                (
-                    buffer.IsEmpty || buffer.End.Equals(readPosition),
-                    cancellationToken
-                );
-            }
+                if (sslState.WantsWrite())
+                {
+                    this.TraceLog("write during read requested");
+                    return this.WriteDuringOperation<ReadResult>
+                    (
+                        this.ReturnReadResult,
+                        //retry read if buffer not read completely
+                        buffer.IsEmpty || buffer.End.Equals(readPosition),
+                        cancellationToken
+                    );
+                }
 
-            if (sslState.WantsWrite())
-            {
-                this.TraceLog("write during read requested");
-                return this.WriteDuringOperation<ReadResult>
-                (
-                    this.ReturnReadResult,
-                    //retry read if buffer not read completely
-                    buffer.IsEmpty || buffer.End.Equals(readPosition),
-                    cancellationToken
-                );
-            }
-
-            //TODO: stack overflow
-            if (sslState.WantsRead())
-            {
-                this.TraceLog("read during read requested");
-                return this.ReadAsync(cancellationToken);
+                //TODO: stack overflow
+                if (sslState.WantsRead())
+                {
+                    this.TraceLog("read during read requested");
+                    return this.ReadAsync(cancellationToken);
+                }
             }
 
             //get the decrypted buffer
@@ -416,7 +422,6 @@ namespace ThePlague.Networking.Tls
         )
         {
             SslState sslState;
-            readPosition = buffer.Start;
 
             try
             {
@@ -438,14 +443,6 @@ namespace ThePlague.Networking.Tls
                 this.ProcessRenegotiate(ex);
                 this.ProcessShutdown(ex);
                 throw;
-            }
-            finally
-            {
-                if (!buffer.IsEmpty
-                    && !buffer.Start.Equals(readPosition))
-                {
-                    this._innerReader.AdvanceTo(readPosition);
-                }
             }
 
             return sslState;

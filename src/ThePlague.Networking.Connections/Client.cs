@@ -58,11 +58,21 @@ namespace ThePlague.Networking.Connections
 
         /// <summary>
         /// Start the client and return the execution.
+        /// If the client has alrady started through <see cref="StartAsync(CancellationToken)"/>,
+        /// one can await completion here.
         /// </summary>
         /// <param name="cancellationToken">A <see cref="CancellationToken"/> to Cancel the exceution.</param>
         /// <returns>A task representing the <see cref="Client"/> execution</returns>
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
+            //if already started (through startasync)
+            //make run awaitable
+            if (this._clientTask is not null)
+            {
+                await this._clientTask;
+                return;
+            }
+
             //register Cancellation, Client could be executed as a delegate
             CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext)c), this._connectionContext);
 

@@ -76,11 +76,21 @@ namespace ThePlague.Networking.Connections
 
         /// <summary>
         /// Start the server and return the execution.
+        /// If the server has alrady started through <see cref="StartAsync(CancellationToken)"/>,
+        /// one can await completion here.
         /// </summary>
         /// <param name="cancellationToken">A <see cref="CancellationToken"/> to Cancel the listening.</param>
         /// <returns>A task representing the <see cref="Server"/> listening</returns>
         public async Task RunAsync(CancellationToken cancellationToken = default)
         {
+            //if already started (through startasync)
+            //make run awaitable
+            if (this._listenTask is not null)
+            {
+                await this._listenTask;
+                return;
+            }
+
             IConnectionListenerFactory connectionListenerFactory;
             IConnectionListener connectionListener;
 

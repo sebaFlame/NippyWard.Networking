@@ -27,15 +27,15 @@ namespace ThePlague.Networking.Transports.Pipes
         public override void Complete(Exception exception = null)
         {
             this._connection.OutputWriterCompleted();
-            this._writer.Complete(exception);
+            base.Complete(exception);
         }
 
         public override async ValueTask CompleteAsync(Exception exception = null)
         {
-            this._connection.OutputWriterCompleted();
-
             try
             {
+                this._connection.OutputWriterCompleted();
+
                 //could dispose stream
                 //does a flush
                 await this._writer.CompleteAsync(exception);
@@ -50,12 +50,12 @@ namespace ThePlague.Networking.Transports.Pipes
         //(
         //    CancellationToken cancellationToken = default
         //)
-        //{ 
+        //{
         //    try
         //    {
         //        return await this._writer.FlushAsync(cancellationToken);
         //    }
-        //    catch(IOException ex)
+        //    catch (IOException ex)
         //    {
         //        await this._connection.CompleteInputAsync(ex);
         //        throw;

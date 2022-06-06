@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Pipelines;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 
 using System.IO.Pipes;
 
@@ -22,6 +23,8 @@ namespace ThePlague.Networking.Transports.Pipes
 
         protected override async Task DoReceiveAsync()
         {
+            await Task.Yield();
+
             Exception error = null;
             PipeStream inputStream = this._inputStream;
             PipeWriter writer = this._receiveFromEndpoint.Writer;
@@ -51,14 +54,14 @@ namespace ThePlague.Networking.Transports.Pipes
                         //unix implementation is using unix domain sockets
                         readTask = inputStream.ReadAsync(buffer, cancellationToken);
 
-                        this.TraceLog(readTask.IsCompletedSuccessfully ? "receive is sync" : "receive is async");
-
                         if (readTask.IsCompletedSuccessfully)
                         {
+                            this.TraceLog("receive is sync");
                             bytesReceived = readTask.Result;
                         }
                         else
                         {
+                            this.TraceLog("receive is async");
                             bytesReceived = await readTask;
                         }
 
@@ -135,9 +138,10 @@ namespace ThePlague.Networking.Transports.Pipes
                 try
                 {
                     this.TraceLog($"shutting down named pipe receive");
-                    await inputStream.DisposeAsync();
+                    inputStream.Close();
                 }
-                catch { }
+                catch
+                { }
 
                 // close the *writer* half of the receive pipe; we won't
                 // be writing any more, but callers can still drain the
@@ -145,7 +149,7 @@ namespace ThePlague.Networking.Transports.Pipes
                 this.TraceLog($"marking {nameof(this.Input)} as complete");
                 try
                 {
-                    writer.Complete(error);
+                    await writer.CompleteAsync(error);
                 }
                 catch
                 { }
