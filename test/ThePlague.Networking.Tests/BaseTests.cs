@@ -23,7 +23,7 @@ using ThePlague.Networking.Transports.Pipes;
 
 namespace ThePlague.Networking.Tests
 {
-    public abstract class BaseSocketTests : IClassFixture<ServicesState>
+    public abstract class BaseTests : IClassFixture<ServicesState>
     {
         //DO NOT use unix domain sockets on windows
         //weird issues using Unix Domain Sockets on windows
@@ -56,13 +56,13 @@ namespace ThePlague.Networking.Tests
         private static int _SocketIndex;
         private static int _PipeIndex;
 
-        static BaseSocketTests()
+        static BaseTests()
         {
             _UsedPorts = new List<int>();
             _SocketIndex = 0;
         }
 
-        public BaseSocketTests(ServicesState serviceState)
+        public BaseTests(ServicesState serviceState)
         {
             this._servicesState = serviceState;
         }

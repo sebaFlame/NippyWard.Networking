@@ -21,7 +21,7 @@ using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Tests
 {
-    public abstract class BaseDataTests : BaseSocketTests
+    public abstract class BaseDataTests : BaseTests
     {
         private const string _ServerHello = "Hello Client";
         private const string _ClientHello = "Hello Server";

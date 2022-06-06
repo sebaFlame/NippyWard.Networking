@@ -290,8 +290,6 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private static void SetDefaultSocketOptions(Socket socket)
         {
-            socket.LingerState = new LingerOption(true, 10);
-
             if (socket.AddressFamily == AddressFamily.Unix)
             {
                 return;
