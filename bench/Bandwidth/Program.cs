@@ -184,8 +184,19 @@ namespace Bandwidth
             bool useTls = false
         )
         {
-            IConnectionListenerFactory listener = new NamedPipeConnectionListenerFactory();
-            IConnectionFactory factory = new NamedPipeConnectionFactory();
+            IConnectionListenerFactory listener;
+            IConnectionFactory factory;
+
+            if(OperatingSystem.IsLinux())
+            {
+                listener = new SocketConnectionContextListenerFactory();
+                factory = new SocketConnectionContextFactory();
+            }
+            else
+            {
+                listener = new NamedPipeConnectionListenerFactory();
+                factory = new NamedPipeConnectionFactory();
+            }
 
             return StartBandwidth
             (
