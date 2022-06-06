@@ -86,6 +86,14 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeOptions? receiveOptions = null
         )
         {
+            //weird behavoir using UnixDomainSocketEndPoint in Windows
+            //sometimes can not do graceful shutdown
+            if (endpoint is UnixDomainSocketEndPoint
+                && !OperatingSystem.IsLinux())
+            {
+                throw new NotSupportedException($"{nameof(UnixDomainSocketEndPoint)} not supported on {Environment.OSVersion}");
+            }
+
             ILogger? logger = serverBuilder.ApplicationServices.CreateLogger<SocketConnectionContextListenerFactory>();
 
             IConnectionListenerFactory connectionListenerFactory = new SocketConnectionContextListenerFactory
