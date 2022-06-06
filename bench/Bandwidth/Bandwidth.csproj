@@ -24,4 +24,11 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="6.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\BenchMark\LegacySsl\*.cs" />
+    <Compile Include="..\BenchMark\StreamConnectionContext.cs" />
+    <Compile Include="..\BenchMark\BenchmarkExtensions.cs" />
+    <Compile Include="..\BenchMark\IStreamFeature.cs" />
+  </ItemGroup>
+
 </Project>

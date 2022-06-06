@@ -17,7 +17,7 @@ using System.Net.Sockets;
 
 namespace Benchmark
 {
-    internal class StreamConnectionContext : ConnectionContext, IStreamFeature
+    public class StreamConnectionContext : ConnectionContext, IStreamFeature
     {
         public override string ConnectionId { get; set; }
         public override IDuplexPipe Transport { get; set; }

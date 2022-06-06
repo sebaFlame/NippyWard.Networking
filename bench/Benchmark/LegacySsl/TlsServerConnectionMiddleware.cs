@@ -18,7 +18,7 @@ using Microsoft.Extensions.Logging;
 namespace Benchmark.LegacySsl
 {
     // code copied from https://github.com/davidfowl/BedrockFramework/
-    internal class TlsServerConnectionMiddleware
+    public class TlsServerConnectionMiddleware
     {
         private readonly ConnectionDelegate _next;
         private readonly TlsOptions _options;

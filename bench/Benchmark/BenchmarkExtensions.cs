@@ -15,7 +15,7 @@ using ThePlague.Networking.Logging;
 
 namespace Benchmark
 {
-    internal static class BenchmarkExtensions
+    public static class BenchmarkExtensions
     {
         public static ClientBuilder UseStream(this ClientBuilder clientBuilder, Func<string> createConnectionId)
         {

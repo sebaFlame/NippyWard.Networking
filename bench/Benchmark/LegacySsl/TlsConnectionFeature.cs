@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace Benchmark.LegacySsl
 {
     // code copied from https://github.com/davidfowl/BedrockFramework/
-    internal class TlsConnectionFeature : ITlsConnectionFeature, ITlsHandshakeFeature
+    public class TlsConnectionFeature : ITlsConnectionFeature, ITlsHandshakeFeature
     {
         public X509Certificate2 LocalCertificate { get; set; }
 

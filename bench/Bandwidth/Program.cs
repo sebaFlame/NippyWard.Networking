@@ -10,6 +10,8 @@ using System.Net.Sockets;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
@@ -19,17 +21,22 @@ using OpenSSL.Core.Keys;
 using OpenSSL.Core.ASN1;
 using OpenSSL.Core.X509;
 using OpenSSL.Core.SSL;
+using OpenSSL.Core;
+using Benchmark.LegacySsl;
+using Benchmark;
 
 using ThePlague.Networking.Logging;
 using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Transports.Pipes;
 using ThePlague.Networking.Tls;
+using System.Security.Authentication;
 
 namespace Bandwidth
 {
     public class Program
     {
-        static Memory<byte> _Buffer;
+        private const int _TestInSeconds = 1;
+        private static Memory<byte> _Buffer;
         private static IList<int> _UsedPorts;
         private static int _SocketIndex;
         private static int _PipeIndex;
@@ -59,7 +66,9 @@ namespace Bandwidth
             Console.WriteLine("  2.     TLS over TCP IP Sockets");
             Console.WriteLine($"  3.     {(OperatingSystem.IsLinux() ? "Unix Domain Sockets" : "Named Pipes")}");
             Console.WriteLine($"  4.     TLS over {(OperatingSystem.IsLinux() ? "Unix Domain Sockets" : "Named Pipes")}");
-            Console.WriteLine("  Other. exit");
+            Console.WriteLine("  5.     Legacy Pipelines Stream");
+            Console.WriteLine("  6.     Legacy TLS over Legacy Pipelines Stream");
+            Console.WriteLine("  Other. Exit");
 
             ConsoleKeyInfo keyInfo;
             while(true)
@@ -79,6 +88,12 @@ namespace Bandwidth
                         continue;
                     case ConsoleKey.D4:
                         await PipeBandwidth(Console.Out, serviceProvider, true);
+                        continue;
+                    case ConsoleKey.D5:
+                        await LegacyBandwidth(Console.Out, serviceProvider);
+                        continue;
+                    case ConsoleKey.D6:
+                        await LegacyBandwidth(Console.Out, serviceProvider, true);
                         continue;
                     default:
                         return;
@@ -131,8 +146,9 @@ namespace Bandwidth
 
         protected static void InitializeCertificate
         (
-            out X509Certificate openSslCertificate,
-            out PrivateKey openSslKey
+            out OpenSSL.Core.X509.X509Certificate openSslCertificate,
+            out PrivateKey openSslKey,
+            out X509Certificate2 certificate
         )
         {
             var start = DateTime.Now;
@@ -154,6 +170,33 @@ namespace Bandwidth
 
             //self sign certificate
             openSslCertificate.SelfSign(openSslKey, DigestType.SHA256);
+
+            //create memorystream to write certificate to
+            char[] certBuffer, keyBuffer;
+            using (MemoryStream stream = new MemoryStream())
+            {
+                openSslCertificate.Write(stream, string.Empty, CipherType.NONE, FileEncoding.PEM);
+
+                certBuffer = Encoding.UTF8.GetChars(stream.ToArray());
+
+                //reset stream
+                stream.Position = 0;
+                stream.SetLength(0);
+
+                openSslKey.Write(stream, string.Empty, CipherType.NONE, FileEncoding.PEM);
+
+                keyBuffer = Encoding.UTF8.GetChars(stream.ToArray());
+            }
+
+            X509Certificate2 temp = X509Certificate2.CreateFromPem
+            (
+                certBuffer,
+                keyBuffer
+            );
+
+            //workaround for "No credentials are available in the security package"
+            //https://github.com/dotnet/runtime/issues/23749
+            certificate = new X509Certificate2(temp.Export(X509ContentType.Pkcs12));
         }
 
         private static Task IpSocketBandwidth
@@ -173,7 +216,7 @@ namespace Bandwidth
                 CreateIPEndPoint(),
                 listener,
                 factory,
-                useTls
+                useTls ? TlsType.OpenSSL : TlsType.None
             );
         }
 
@@ -205,7 +248,28 @@ namespace Bandwidth
                 OperatingSystem.IsLinux() ? CreateUnixDomainSocketEndPoint() : CreateNamedPipeEndPoint(),
                 listener,
                 factory,
-                useTls
+                useTls ? TlsType.OpenSSL : TlsType.None
+            );
+        }
+
+        private static Task LegacyBandwidth
+        (
+            TextWriter writer,
+            IServiceProvider serviceProvider,
+            bool useTls = false
+        )
+        {
+            IConnectionListenerFactory listener = new StreamConnectionContextListenerFactory();
+            IConnectionFactory factory = new StreamConnectionContextFactory();
+
+            return StartBandwidth
+            (
+                writer,
+                serviceProvider,
+                CreateIPEndPoint(),
+                listener,
+                factory,
+                useTls ? TlsType.Legacy : TlsType.None
             );
         }
 
@@ -216,7 +280,7 @@ namespace Bandwidth
             EndPoint endpoint,
             IConnectionListenerFactory connectionListenerFactory,
             IConnectionFactory connectionFactory,
-            bool useTls = false
+            TlsType tlsType = TlsType.None
         )
         {
             //initialize listener
@@ -236,20 +300,36 @@ namespace Bandwidth
                 throw new InvalidOperationException("Server could not be created");
             }
 
-            X509Certificate cert = null;
+            OpenSSL.Core.X509.X509Certificate cert = null;
             PrivateKey key = null;
-            SslProtocol protocol = SslProtocol.Tls13;
-            if(useTls)
+            X509Certificate2 legacyCert = null;
+            SslProtocol protocol = SslProtocol.Tls12;
+            SslProtocols legacyProtocol = SslProtocols.Tls12;
+
+            if(tlsType != TlsType.None)
             {
-                InitializeCertificate(out cert, out key);
+                InitializeCertificate(out cert, out key, out legacyCert);
             }
 
             long sent = 0, received = 0;
 
             IConnectionBuilder serverBuilder = new ConnectionBuilder(serviceProvider);
-            if(useTls)
+
+            switch (tlsType)
             {
-                serverBuilder = serverBuilder.UseServerTls(cert, key, protocol);
+                case TlsType.OpenSSL:
+                    serverBuilder = serverBuilder.UseServerTls(cert, key, protocol);
+                    break;
+                case TlsType.Legacy:
+                    serverBuilder = serverBuilder.UseServerLegacySsl(new TlsOptions()
+                    {
+                        SslProtocols = legacyProtocol,
+                        LocalCertificate = legacyCert
+                    });
+                    break;
+                default:
+                    break;
+
             }
 
             ConnectionDelegate serverDelegate = serverBuilder
@@ -263,26 +343,24 @@ namespace Bandwidth
                         await next(ctx);
                     }
                 )
-                .Use
-                (
-                    (next) =>
-                    async (ctx) =>
-                    {
-                        ValueTask<ReadResult> readTask = ctx.Transport.Input.ReadAsync();
-
-                        await ctx.Transport.Output.CompleteAsync();
-
-                        await readTask;
-
-                        await ctx.Transport.Input.CompleteAsync();
-                    }
-                )
                 .Build();
 
             IConnectionBuilder clientBuilder = new ConnectionBuilder(serviceProvider);
-            if (useTls)
+
+            switch (tlsType)
             {
-                clientBuilder = clientBuilder.UseClientTls(protocol);
+                case TlsType.OpenSSL:
+                    clientBuilder = clientBuilder.UseClientTls(protocol);
+                    break;
+                case TlsType.Legacy:
+                    clientBuilder = clientBuilder.UseClientLegacySsl(new TlsOptions()
+                    {
+                        SslProtocols = legacyProtocol
+                    });
+                    break;
+                default:
+                    break;
+
             }
 
             ConnectionDelegate clientDelegate = clientBuilder
@@ -295,22 +373,6 @@ namespace Bandwidth
                         await next(ctx);
                     }
                 )
-                .Use
-                (
-                    (next) =>
-                    async (ctx) =>
-                    {
-                        try
-                        {
-                            await ctx.Transport.Input.ReadAsync();
-                        }
-                        catch
-                        { }
-
-                        await ctx.Transport.Output.CompleteAsync();
-                        await ctx.Transport.Input.CompleteAsync();
-                    }
-                )
                 .Build();
 
             await Task.WhenAll
@@ -320,8 +382,8 @@ namespace Bandwidth
             );
 
             Console.WriteLine();
-            writer.WriteLine($"Server send bandwidth: {sent / (1024 * 1024):0.##}MB/s");
-            writer.WriteLine($"Client receive bandwidth: {received / (1024 * 1024):0.##}MB/s");
+            writer.WriteLine($"Server send bandwidth: {sent / (_TestInSeconds * 1024 * 1024):0.##}MB/s");
+            writer.WriteLine($"Client receive bandwidth: {received / (_TestInSeconds * 1024 * 1024):0.##}MB/s");
         }
 
         private static async Task<long> DoSend
@@ -336,7 +398,7 @@ namespace Bandwidth
             int bufferSize;
             long sent = 0;
 
-            CancellationTokenSource cts = new CancellationTokenSource(1000);
+            CancellationTokenSource cts = new CancellationTokenSource(_TestInSeconds * 1000);
             CancellationToken cancellationToken = cts.Token;
 
             try
@@ -401,7 +463,7 @@ namespace Bandwidth
             ReadOnlySequence<byte> buffer;
             long received = 0;
 
-            CancellationTokenSource cts = new CancellationTokenSource(1000);
+            CancellationTokenSource cts = new CancellationTokenSource(_TestInSeconds * 1000);
             CancellationToken cancellationToken = cts.Token;
 
             try
@@ -439,6 +501,13 @@ namespace Bandwidth
             }
 
             return received;
+        }
+
+        private enum TlsType
+        {
+            None,
+            OpenSSL,
+            Legacy
         }
     }
 }
