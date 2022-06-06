@@ -75,7 +75,8 @@ namespace ThePlague.Networking.Logging
                 path = Path.GetFullPath(filePath);
 
                 string currentPath = string.Empty;
-                string[] parts = path.Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                //TODO: fix
+                string[] parts = path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
                 for (int i = 0; i < parts.Length - 1; i++)
                 {
                     currentPath = Path.Combine(currentPath, parts[i]);
