@@ -60,7 +60,7 @@ namespace ThePlague.Networking.Transports.Pipes
                 sendPipeOptions: this._sendOptions,
                 receivePipeOptions: this._receiveOptions,
                 featureCollection: this._featureCollection,
-                name: this._createName(),
+                name: this._createName is null ? nameof(NamedPipeConnectionContext) : this._createName(),
                 logger: this._logger
             );
         }
