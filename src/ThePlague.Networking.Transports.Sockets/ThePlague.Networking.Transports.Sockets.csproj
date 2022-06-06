@@ -1,9 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net5.0</TargetFramework>
-  </PropertyGroup>
-
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -16,4 +12,5 @@
     <ProjectReference Include="..\ThePlague.Networking.Transports\ThePlague.Networking.Transports.csproj" />
     <ProjectReference Include="..\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
   </ItemGroup>
+  
 </Project>
