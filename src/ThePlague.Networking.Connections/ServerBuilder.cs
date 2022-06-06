@@ -12,8 +12,6 @@ using Microsoft.AspNetCore.Http.Features;
 
 using ThePlague.Networking.Logging;
 
-#nullable enable
-
 namespace ThePlague.Networking.Connections
 {
     public class ServerBuilder

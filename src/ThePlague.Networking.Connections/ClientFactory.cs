@@ -15,13 +15,13 @@ namespace ThePlague.Networking.Connections
     {
         private ConnectionDelegate _connectionDelegate;
         private ClientContext _clientContext;
-        private ILogger _logger;
+        private ILogger? _logger;
 
         public ClientFactory 
         (
             ConnectionDelegate connectionDelegate,
             ClientContext clientContext,
-            ILogger logger
+            ILogger? logger
         )
         {
             this._connectionDelegate = connectionDelegate;

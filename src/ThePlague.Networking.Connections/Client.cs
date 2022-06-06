@@ -19,15 +19,15 @@ namespace ThePlague.Networking.Connections
     public class Client : IHostedService, IDisposable, IAsyncDisposable
     {
         private readonly ConnectionDelegate _connectionDelegate;
-        private readonly ILogger _logger;
+        private readonly ILogger? _logger;
         private readonly ConnectionContext _connectionContext;
-        private Task _clientTask;
+        private Task? _clientTask;
 
         public Client
         (
             ConnectionContext connectionContext,
             ConnectionDelegate connectionDelegate,
-            ILogger logger
+            ILogger? logger
         )
         {
             this._connectionContext = connectionContext;
@@ -37,7 +37,7 @@ namespace ThePlague.Networking.Connections
 
         ~Client()
         {
-            this._logger.TraceLog(this._connectionContext.ConnectionId ,"client finalizer");
+            this._logger?.TraceLog(this._connectionContext.ConnectionId ,"client finalizer");
 
             this.Dispose(false);
         }
@@ -74,7 +74,7 @@ namespace ThePlague.Networking.Connections
             }
 
             //register Cancellation, Client could be executed as a delegate
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext)c), this._connectionContext);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext?)c!), this._connectionContext);
 
             try
             {
@@ -89,12 +89,12 @@ namespace ThePlague.Networking.Connections
             }
             catch(Exception ex)
             {
-                this._logger.LogError(ex, "Unexpected exception from connection {ConnectionId}", this._connectionContext.ConnectionId);
+                this._logger?.LogError(ex, "Unexpected exception from connection {ConnectionId}", this._connectionContext.ConnectionId);
                 throw;
             }
             finally
             {
-                this._logger.TraceLog(this._connectionContext.ConnectionId, "disposing client");
+                this._logger?.TraceLog(this._connectionContext.ConnectionId, "disposing client");
 
                 reg.Dispose();
 
@@ -127,7 +127,7 @@ namespace ThePlague.Networking.Connections
                 return;
             }
 
-            IConnectionLifetimeNotificationFeature connectionLifetimeNotificationFeature =
+            IConnectionLifetimeNotificationFeature? connectionLifetimeNotificationFeature =
                 connectionContext.Features.Get<IConnectionLifetimeNotificationFeature>();
 
             //prioritize "clean" shutdown

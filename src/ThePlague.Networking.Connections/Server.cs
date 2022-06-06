@@ -31,18 +31,18 @@ namespace ThePlague.Networking.Connections
             }
         }
 
-        private ServerContext _serverContext;
-        private CancellationTokenSource _cts;
-        private Task _listenTask;
-        private ConnectionDelegate _connectionDelegate;
-        private ILogger _logger;
-        ConcurrentDictionary<ulong, Task> _connections;
+        private readonly ServerContext _serverContext;
+        private readonly CancellationTokenSource _cts;
+        private Task? _listenTask;
+        private readonly ConnectionDelegate _connectionDelegate;
+        private readonly ILogger? _logger;
+        private readonly ConcurrentDictionary<ulong, Task> _connections;
 
         public Server
         (
             ServerContext serverContext,
             ConnectionDelegate connectionDelegate,
-            ILogger logger
+            ILogger? logger
         )
         {
             this._serverContext = serverContext;
@@ -56,7 +56,7 @@ namespace ThePlague.Networking.Connections
 
         ~Server()
         {
-            this._logger.TraceLog("Server", "finalizer");
+            this._logger?.TraceLog("Server", "finalizer");
 
             this.Dispose(false);
         }
@@ -125,6 +125,11 @@ namespace ThePlague.Networking.Connections
         /// <returns>The finishing execution</returns>
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
+            if(this._listenTask is null)
+            {
+                throw new NullReferenceException($"Server has not been started with {nameof(StartAsync)}");
+            }
+
             this.Shutdown(this._serverContext.TimeOut);
 
             await this._listenTask;
@@ -140,8 +145,8 @@ namespace ThePlague.Networking.Connections
             CancellationToken cancellationToken
         )
         {
-            ValueTask<ConnectionContext> connectionTask;
-            ConnectionContext connectionContext;
+            ValueTask<ConnectionContext?> connectionTask;
+            ConnectionContext? connectionContext;
             ulong connectionCount = 0, connectionId;
 
             try
@@ -159,9 +164,15 @@ namespace ThePlague.Networking.Connections
                         connectionContext = connectionTask.Result;
                     }
 
+                    //shutdown of listener
+                    if(connectionContext is null)
+                    {
+                        break;
+                    }
+
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    this._logger.TraceLog("Server", "accepted connections");
+                    this._logger?.TraceLog("Server", "accepted connections");
 
                     connectionContext.Features.Set<IServerLifetimeFeature>(this);
 
@@ -186,7 +197,7 @@ namespace ThePlague.Networking.Connections
                     || connectionCount < maxClients);
 
                 //only single connection, await it
-                this._logger.TraceLog("Server", "awaiting single connection");
+                this._logger?.TraceLog("Server", "awaiting single connection");
                 await this.Connections;
             }
             catch (OperationCanceledException ex)
@@ -197,17 +208,17 @@ namespace ThePlague.Networking.Connections
                 }
 
                 //shutdown has been called, await clients (if any)
-                this._logger.TraceLog("Server", "awaiting connections after shutdown");
+                this._logger?.TraceLog("Server", "awaiting connections after shutdown");
                 await this.Connections;
             }
             catch (Exception ex)
             {
-                this._logger.LogError(ex, "[Server] Unexpected exception from server");
+                this._logger?.LogError(ex, "[Server] Unexpected exception from server");
                 throw;
             }
             finally
             {
-                this._logger.TraceLog("Server", $"unbinding listener {listenerIndex}");
+                this._logger?.TraceLog("Server", $"unbinding listener {listenerIndex}");
                 await connectionListener.UnbindAsync(cancellationToken);
             }
 
@@ -219,7 +230,7 @@ namespace ThePlague.Networking.Connections
             ulong connectionId,
             ConnectionContext connectionContext,
             ConnectionDelegate connectionDelegate,
-            ILogger logger,
+            ILogger? logger,
             IDictionary<ulong, Task> connections,
             CancellationToken cancellationToken
         )
@@ -230,7 +241,7 @@ namespace ThePlague.Networking.Connections
             //ensures add to connections collection
             await Task.Yield();
 
-            reg = cancellationToken.UnsafeRegister((c) => ConnectionContextShutdown((ConnectionContext)c), connectionContext);
+            reg = cancellationToken.UnsafeRegister((c) => ConnectionContextShutdown((ConnectionContext?)c!), connectionContext);
 
             try
             {
@@ -246,12 +257,12 @@ namespace ThePlague.Networking.Connections
             }
             catch(Exception ex)
             {
-                logger.LogError(ex, "Unexpected exception from connection {ConnectionId}", connectionContext.ConnectionId);
+                logger?.LogError(ex, "Unexpected exception from connection {ConnectionId}", connectionContext.ConnectionId);
                 throw;
             }
             finally
             {
-                logger.TraceLog($"{connectionContext.ConnectionId}", "disposing client");
+                logger?.TraceLog($"{connectionContext.ConnectionId}", "disposing client");
 
                 reg.Dispose();
 
@@ -263,7 +274,7 @@ namespace ThePlague.Networking.Connections
 
         private static void ConnectionContextShutdown(ConnectionContext connectionContext, bool lifetimeOnly = false)
         {
-            IConnectionLifetimeNotificationFeature connectionLifetimeNotificationFeature =
+            IConnectionLifetimeNotificationFeature? connectionLifetimeNotificationFeature =
                 connectionContext.Features.Get<IConnectionLifetimeNotificationFeature>();
 
             //prioritize "clean" shutdown
@@ -283,34 +294,35 @@ namespace ThePlague.Networking.Connections
         {
             if(timeoutInSeconds > 0)
             {
-                this._cts?.CancelAfter((int)timeoutInSeconds * 1000);
+                this._cts.CancelAfter((int)timeoutInSeconds * 1000);
             }
             else
             {
-                this._cts?.Cancel();
+                this._cts.Cancel();
             }
-            
-            this._cts = null;
         }
 
         public void Dispose()
         {
             this.Dispose(true);
-        }
-
-        internal void Dispose(bool isDisposing)
-        {
-            this.Shutdown();
-
-            if(!isDisposing)
-            {
-                return;
-            }
-
             GC.SuppressFinalize(this);
         }
 
+        private void Dispose(bool _)
+        {
+            this.Shutdown();
+        }
+
         public ValueTask DisposeAsync()
-            => new ValueTask(this.StopAsync());
+        {
+            try
+            {
+                return new ValueTask(this.StopAsync());
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }   
     }
 }

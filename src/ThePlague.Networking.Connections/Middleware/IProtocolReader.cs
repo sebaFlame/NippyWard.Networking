@@ -9,9 +9,9 @@ namespace ThePlague.Networking.Connections.Middleware
 {
     public interface IProtocolReader<TMessage>
     {
-        void Complete(Exception ex = null);
+        void Complete(Exception? ex = null);
 
-        ValueTask CompleteAsync(Exception exception = null);
+        ValueTask CompleteAsync(Exception? exception = null);
 
         ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default);
     }

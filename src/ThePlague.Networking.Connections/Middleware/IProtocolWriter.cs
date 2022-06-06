@@ -9,9 +9,9 @@ namespace ThePlague.Networking.Connections.Middleware
 {
     public interface IProtocolWriter<TMessage>
     {
-        void Complete(Exception ex = null);
+        void Complete(Exception? ex = null);
 
-        ValueTask CompleteAsync(Exception ex = null);
+        ValueTask CompleteAsync(Exception? ex = null);
 
         ValueTask WriteAsync
         (

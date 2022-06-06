@@ -40,7 +40,7 @@ namespace ThePlague.Networking.Connections.Middleware
             ProtocolWriter<TMessage> writer;
             IDuplexPipe pipe = connectionContext.Transport;
             CancellationTokenRegistration? regReader = null, regWriter = null;
-            CancellationTokenSource cts = null;
+            CancellationTokenSource cts;
 
             reader = new ProtocolReader<TMessage>
             (
@@ -55,16 +55,16 @@ namespace ThePlague.Networking.Connections.Middleware
             );
 
             //register abort to reader/writer
-            IConnectionLifetimeFeature connectionLifetimeFeature = connectionContext.Features.Get<IConnectionLifetimeFeature>();
+            IConnectionLifetimeFeature? connectionLifetimeFeature = connectionContext.Features.Get<IConnectionLifetimeFeature>();
             if (connectionLifetimeFeature is not null)
             {
                 regReader = connectionLifetimeFeature
                     .ConnectionClosed
-                    .UnsafeRegister((r) => ((ProtocolReader<TMessage>)r).Complete(new ConnectionAbortedException()), reader);
+                    .UnsafeRegister((r) => ((ProtocolReader<TMessage>?)r)!.Complete(new ConnectionAbortedException()), reader);
 
                 regWriter = connectionLifetimeFeature
                     .ConnectionClosed
-                    .UnsafeRegister((w) => ((ProtocolWriter<TMessage>)w).Complete(new ConnectionAbortedException()), writer);
+                    .UnsafeRegister((w) => ((ProtocolWriter<TMessage>?)w)!.Complete(new ConnectionAbortedException()), writer);
             }
 
             //set correct connection features
@@ -73,7 +73,7 @@ namespace ThePlague.Networking.Connections.Middleware
 
             connectionContext.Features.Set<IConnectionProtocolFeature<TMessage>>(this);
 
-            IConnectionLifetimeNotificationFeature connectionLifetimeNotificationFeature
+            IConnectionLifetimeNotificationFeature? connectionLifetimeNotificationFeature
                 = connectionContext.Features.Get<IConnectionLifetimeNotificationFeature>();
 
             CancellationToken cancellationToken = connectionContext.ConnectionClosed;
@@ -129,6 +129,11 @@ namespace ThePlague.Networking.Connections.Middleware
                         break;
                     }
 
+                    if(readResult.Message is null)
+                    {
+                        continue;
+                    }
+
                     await this._messageDispatcher.DispatchMessageAsync
                     (
                         connectionContext,
@@ -153,7 +158,7 @@ namespace ThePlague.Networking.Connections.Middleware
                 reader.Dispose();
                 writer.Dispose();
 
-                cts?.Dispose();
+                cts.Dispose();
             }
         }
 

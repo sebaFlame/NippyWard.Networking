@@ -4,7 +4,7 @@
     {
         public ProtocolReadResult
         (
-            TMessage message,
+            TMessage? message,
             bool isCanceled,
             bool isCompleted
         )
@@ -14,7 +14,7 @@
             this.IsCompleted = isCompleted;
         }
 
-        public TMessage Message { get; }
+        public TMessage? Message { get; }
         public bool IsCanceled { get; }
         public bool IsCompleted { get; }
     }

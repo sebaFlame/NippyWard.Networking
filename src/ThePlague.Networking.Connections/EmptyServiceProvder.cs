@@ -6,6 +6,6 @@ namespace ThePlague.Networking.Connections
     {
         public static IServiceProvider Instance { get; } = new EmptyServiceProvider();
 
-        public object GetService(Type serviceType) => null;
+        public object? GetService(Type serviceType) => null;
     }
 }

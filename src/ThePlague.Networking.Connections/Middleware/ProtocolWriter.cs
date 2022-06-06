@@ -23,10 +23,10 @@ namespace ThePlague.Networking.Connections.Middleware
             this._semaphore = new SemaphoreSlim(1);
         }
 
-        public void Complete(Exception ex = null)
+        public void Complete(Exception? ex = null)
             => this._pipe.Output.Complete(ex);
 
-        public ValueTask CompleteAsync(Exception ex = null)
+        public ValueTask CompleteAsync(Exception? ex = null)
             => this._pipe.Output.CompleteAsync(ex);
 
         /// <summary>

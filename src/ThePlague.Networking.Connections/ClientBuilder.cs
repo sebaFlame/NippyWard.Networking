@@ -11,8 +11,6 @@ using Microsoft.Extensions.Logging;
 
 using ThePlague.Networking.Logging;
 
-#nullable enable
-
 namespace ThePlague.Networking.Connections
 {
     public class ClientBuilder

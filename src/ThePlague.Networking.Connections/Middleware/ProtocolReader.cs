@@ -24,10 +24,10 @@ namespace ThePlague.Networking.Connections.Middleware
             this._reader = reader;
         }
 
-        public void Complete(Exception ex = null)
+        public void Complete(Exception? ex = null)
             => this._pipe.Input.Complete(ex);
 
-        public ValueTask CompleteAsync(Exception ex = null)
+        public ValueTask CompleteAsync(Exception? ex = null)
             => this._pipe.Input.CompleteAsync(ex);
 
         public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default)
