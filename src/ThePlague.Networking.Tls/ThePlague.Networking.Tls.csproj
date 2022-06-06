@@ -1,4 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -13,5 +18,6 @@
     <ProjectReference Include="..\ThePlague.Networking.Connections\ThePlague.Networking.Connections.csproj" />
     <ProjectReference Include="..\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
   </ItemGroup>
+
 </Project>
   

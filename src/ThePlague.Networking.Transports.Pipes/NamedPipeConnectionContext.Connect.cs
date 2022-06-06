@@ -24,11 +24,11 @@ namespace ThePlague.Networking.Transports.Pipes
             NamedPipeEndPoint endpoint,
             System.IO.Pipes.PipeOptions pipeOptions
                 = System.IO.Pipes.PipeOptions.Asynchronous,
-            System.IO.Pipelines.PipeOptions sendPipeOptions = null,
-            System.IO.Pipelines.PipeOptions receivePipeOptions = null,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null
+            System.IO.Pipelines.PipeOptions? sendPipeOptions = null,
+            System.IO.Pipelines.PipeOptions? receivePipeOptions = null,
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
         {
             //use 2 pipes to allow for graceful shutdown
@@ -48,7 +48,7 @@ namespace ThePlague.Networking.Transports.Pipes
                 pipeOptions
             );
 
-            logger?.TraceLog(name, $"connecting to {endpoint}");
+            logger?.TraceLog(name ?? nameof(NamedPipeConnectionContext), $"connecting to {endpoint}");
 
             //TODO: exception handling per stream
             await Task.WhenAll

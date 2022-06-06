@@ -25,7 +25,7 @@ namespace ThePlague.Networking.Transports.Pipes
         {
             await Task.Yield();
 
-            Exception error = null;
+            Exception? error = null;
             PipeStream inputStream = this._inputStream;
             PipeWriter writer = this._receiveFromEndpoint.Writer;
             CancellationToken cancellationToken = this.ConnectionClosed;

@@ -27,7 +27,7 @@ namespace ThePlague.Networking.Transports.Pipes
         {
             await Task.Yield();
 
-            Exception error = null;
+            Exception? error = null;
             PipeStream outputStream = this._outputStream;
             PipeReader reader = this._sendToEndpoint.Reader;
             PipeWriter writer = this._sendToEndpoint.Writer;

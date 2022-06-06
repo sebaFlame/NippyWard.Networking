@@ -30,9 +30,9 @@ namespace ThePlague.Networking.Transports.Pipes
             Pipe inputPipe,
             PipeStream outputStream,
             PipeStream inputStream,
-            IFeatureCollection serverFeatureCollection = null,
-            string name = null,
-            ILogger logger = null
+            IFeatureCollection? serverFeatureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             : base
             (
@@ -70,11 +70,11 @@ namespace ThePlague.Networking.Transports.Pipes
             NamedPipeEndPoint endPoint,
             PipeStream outputStream,
             PipeStream inputStream,
-            System.IO.Pipelines.PipeOptions sendPipeOptions = null,
-            System.IO.Pipelines.PipeOptions receivePipeOptions = null,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null
+            System.IO.Pipelines.PipeOptions? sendPipeOptions = null,
+            System.IO.Pipelines.PipeOptions? receivePipeOptions = null,
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             => Create
             (
@@ -95,9 +95,9 @@ namespace ThePlague.Networking.Transports.Pipes
             Pipe inputPipe,
             PipeStream outputStream,
             PipeStream inputStream,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             => new NamedPipeConnectionContext
             (

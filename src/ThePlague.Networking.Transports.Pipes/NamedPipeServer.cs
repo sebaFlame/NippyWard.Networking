@@ -20,22 +20,22 @@ namespace ThePlague.Networking.Transports.Pipes
     {
         public EndPoint EndPoint => this._endPoint;
 
-        private System.IO.Pipelines.PipeOptions _sendOptions;
-        private System.IO.Pipelines.PipeOptions _receiveOptions;
+        private System.IO.Pipelines.PipeOptions? _sendOptions;
+        private System.IO.Pipelines.PipeOptions? _receiveOptions;
         private readonly NamedPipeEndPoint _endPoint;
-        private readonly IFeatureCollection _serverFeatureCollection;
-        private readonly ILogger _logger;
-        private readonly Func<string> _createName;
+        private readonly IFeatureCollection? _serverFeatureCollection;
+        private readonly ILogger? _logger;
+        private readonly Func<string>? _createName;
 
-        private NamedPipeServerStream _inputStream;
-        private NamedPipeServerStream _outputStream;
+        private NamedPipeServerStream? _inputStream;
+        private NamedPipeServerStream? _outputStream;
 
         public NamedPipeServer
         (
             NamedPipeEndPoint endpoint,
-            IFeatureCollection serverFeatureCollection = null,
-            Func<string> createName = null,
-            ILogger logger = null
+            IFeatureCollection? serverFeatureCollection = null,
+            Func<string>? createName = null,
+            ILogger? logger = null
         )
         {
             this._endPoint = endpoint;
@@ -55,8 +55,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 = PipeTransmissionMode.Byte,
             System.IO.Pipes.PipeOptions pipeOptions
                 = System.IO.Pipes.PipeOptions.Asynchronous,
-            System.IO.Pipelines.PipeOptions sendPipeOptions = null,
-            System.IO.Pipelines.PipeOptions receivePipeOptions = null
+            System.IO.Pipelines.PipeOptions? sendPipeOptions = null,
+            System.IO.Pipelines.PipeOptions? receivePipeOptions = null
         )
         {
             NamedPipeEndPoint endpoint = this._endPoint;
@@ -88,7 +88,7 @@ namespace ThePlague.Networking.Transports.Pipes
         /// </summary>
         public void Stop()
         {
-            NamedPipeServerStream output = this._outputStream;
+            NamedPipeServerStream? output = this._outputStream;
             this._outputStream = null;
 
             if(output is null)
@@ -102,7 +102,7 @@ namespace ThePlague.Networking.Transports.Pipes
             }
             catch { }
 
-            NamedPipeServerStream input = this._inputStream;
+            NamedPipeServerStream? input = this._inputStream;
             this._outputStream = null;
 
             if (input is null)
@@ -117,7 +117,7 @@ namespace ThePlague.Networking.Transports.Pipes
             catch { }
         }
 
-        public async ValueTask<ConnectionContext> AcceptAsync
+        public async ValueTask<ConnectionContext?> AcceptAsync
         (
             CancellationToken cancellationToken = default(CancellationToken)
         )
@@ -129,8 +129,8 @@ namespace ThePlague.Networking.Transports.Pipes
                     //TODO: exception handling per stream
                     await Task.WhenAll
                     (
-                        this._outputStream.WaitForConnectionAsync(cancellationToken),
-                        this._inputStream.WaitForConnectionAsync(cancellationToken)
+                        this._outputStream!.WaitForConnectionAsync(cancellationToken),
+                        this._inputStream!.WaitForConnectionAsync(cancellationToken)
                     );
 
                     return NamedPipeConnectionContext.Create
