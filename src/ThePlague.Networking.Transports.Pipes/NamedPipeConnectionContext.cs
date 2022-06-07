@@ -23,13 +23,15 @@ namespace ThePlague.Networking.Transports.Pipes
         private readonly WrappedReader _input;
         private readonly WrappedWriter _output;
 
-        internal NamedPipeConnectionContext
+        private NamedPipeConnectionContext
         (
             NamedPipeEndPoint endPoint,
             Pipe outputPipe,
             Pipe inputPipe,
             PipeStream outputStream,
             PipeStream inputStream,
+            PipeScheduler sendScheduler,
+            PipeScheduler receiveScheduler,
             IFeatureCollection? serverFeatureCollection = null,
             string? name = null,
             ILogger? logger = null
@@ -40,6 +42,8 @@ namespace ThePlague.Networking.Transports.Pipes
                   endPoint,
                   outputPipe,
                   inputPipe,
+                  sendScheduler,
+                  receiveScheduler,
                   serverFeatureCollection,
                   name,
                   logger
@@ -83,6 +87,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 new Pipe(receivePipeOptions ?? System.IO.Pipelines.PipeOptions.Default),
                 outputStream,
                 inputStream,
+                sendPipeOptions?.ReaderScheduler ?? System.IO.Pipelines.PipeOptions.Default.ReaderScheduler,
+                receivePipeOptions?.WriterScheduler ?? System.IO.Pipelines.PipeOptions.Default.WriterScheduler,
                 featureCollection,
                 name,
                 logger
@@ -95,6 +101,8 @@ namespace ThePlague.Networking.Transports.Pipes
             Pipe inputPipe,
             PipeStream outputStream,
             PipeStream inputStream,
+            PipeScheduler sendScheduler,
+            PipeScheduler receiveScheduler,
             IFeatureCollection? featureCollection = null,
             string? name = null,
             ILogger? logger = null
@@ -106,6 +114,8 @@ namespace ThePlague.Networking.Transports.Pipes
                 inputPipe,
                 outputStream,
                 inputStream,
+                sendScheduler,
+                receiveScheduler,
                 featureCollection,
                 name,
                 logger

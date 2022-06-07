@@ -206,8 +206,17 @@ namespace Bandwidth
             bool useTls = false
         )
         {
-            IConnectionListenerFactory listener = new SocketConnectionContextListenerFactory();
-            IConnectionFactory factory = new SocketConnectionContextFactory();
+            IConnectionListenerFactory listener = new SocketConnectionContextListenerFactory
+            (
+                sendOptions: new PipeOptions(writerScheduler: PipeScheduler.Inline, readerScheduler: PipeScheduler.Inline),
+                receiveOptions: new PipeOptions(writerScheduler: PipeScheduler.Inline)
+            );
+
+            IConnectionFactory factory = new SocketConnectionContextFactory
+            (
+                sendOptions: new PipeOptions(writerScheduler: PipeScheduler.Inline, readerScheduler: PipeScheduler.Inline),
+                receiveOptions: new PipeOptions(writerScheduler: PipeScheduler.Inline)
+            );
 
             return StartBandwidth
             (

@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using System.Timers;
 using System.Runtime.CompilerServices;
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
@@ -63,6 +62,8 @@ namespace ThePlague.Networking.Transports
 
         protected readonly Pipe _sendToEndpoint;
         protected readonly Pipe _receiveFromEndpoint;
+        protected readonly PipeScheduler _sendScheduler;
+        protected readonly PipeScheduler _receiveScheduler;
         protected readonly ILogger? _logger;
 
         private readonly CancellationTokenSource _connectionClosedTokenSource;
@@ -77,6 +78,11 @@ namespace ThePlague.Networking.Transports
 
         private static readonly Task _NotStartedTask;
         private static readonly System.Timers.Timer _BandwidthTimer;
+        //delegates
+        private static readonly Action<ThreadTaskWrapper> _DoSendTaskWrapper = DoSendAsync;
+        private static readonly Action<object?> _DoSend = DoSendAsync;
+        private static readonly Action<ThreadTaskWrapper> _DoReceiveTaskWrapper = DoReceiveAsync;
+        private static readonly Action<object?> _DoReceive = DoReceiveAsync;
 
         static TransportConnectionContext()
         {
@@ -92,6 +98,8 @@ namespace ThePlague.Networking.Transports
             EndPoint remoteEndpoint,
             Pipe sendToEndpoint,
             Pipe receiveFromEndpoint,
+            PipeScheduler sendScheduler,
+            PipeScheduler receiveScheduler,
             IFeatureCollection? featureCollection = null,
             string? name = null,
             ILogger? logger = null
@@ -99,6 +107,9 @@ namespace ThePlague.Networking.Transports
         {
             this._sendToEndpoint = sendToEndpoint;
             this._receiveFromEndpoint = receiveFromEndpoint;
+
+            this._sendScheduler = sendScheduler;
+            this._receiveScheduler = receiveScheduler;
 
             this._logger = logger;
 
@@ -146,7 +157,7 @@ namespace ThePlague.Networking.Transports
             this.Dispose(false);
         }
 
-        private void OnBandwidthEvent(object source, ElapsedEventArgs e)
+        private void OnBandwidthEvent(object? source, ElapsedEventArgs e)
         {
             long totalBytesSent = this.BytesSent;
             Interlocked.Exchange
@@ -204,32 +215,59 @@ namespace ThePlague.Networking.Transports
 
         /// <summary>
         /// This method needs to be called immediately after construction!
+        /// This method blocks until threads have started!
         /// </summary>
         protected TransportConnectionContext InitializeSendReceiveTasks()
         {
-            //initialize receive/send thread
+            ThreadTaskWrapper receiveWrapper = new ThreadTaskWrapper(this, this._receiveScheduler);
+            ThreadTaskWrapper sendWrapper = new ThreadTaskWrapper(this, this._sendScheduler);
 
-            //ensure these are on a threadpool thread
-            //this ensures all code gets executed on a thread and NOT in this method
-            //TODO: (synchronous) callback
-            //ThreadPool.UnsafeQueueUserWorkItem<TransportConnectionContext>(DoReceiveAsync, this, false);
-            //ThreadPool.UnsafeQueueUserWorkItem<TransportConnectionContext>(DoSendAsync, this, false);
+            try
+            {
 
-            this._sendTask = this.DoSendAsync();
-            this._receiveTask = this.DoReceiveAsync();
+                //ensure these are on a threadpool thread
+                //this ensures all code gets executed on a thread and NOT in this method
+                //so when an inline scheduler gets used, this method does not block
+                //indefinitely
+                ThreadPool.UnsafeQueueUserWorkItem(_DoSendTaskWrapper, sendWrapper, false);
+                ThreadPool.UnsafeQueueUserWorkItem(_DoReceiveTaskWrapper, receiveWrapper, false);
+
+                sendWrapper.WaitHandle.WaitOne();
+                receiveWrapper.WaitHandle.WaitOne();
+
+                this._receiveTask = receiveWrapper.Task!;
+                this._sendTask = sendWrapper.Task!;
+            }
+            finally
+            {
+                receiveWrapper.Dispose();
+                sendWrapper.Dispose();
+            }
 
             return this;
         }
 
-        //private static void DoReceiveAsync(TransportConnectionContext ctx)
-        //{
-        //    ctx._receiveTask = ctx.DoReceiveAsync();
-        //}
+        private static void DoReceiveAsync(ThreadTaskWrapper wrapper)
+            => wrapper.Scheduler.Schedule(_DoReceive, wrapper);
 
-        //private static void DoSendAsync(TransportConnectionContext ctx)
-        //{
-        //    ctx._sendTask = ctx.DoSendAsync();
-        //}
+        //starts without existing executioncontext
+        private static void DoReceiveAsync(object? state)
+        {
+            ThreadTaskWrapper wrapper = (ThreadTaskWrapper)state!;
+            TransportConnectionContext ctx = wrapper.Ctx;
+            wrapper.Signal(ctx.DoReceiveAsync());
+        }
+        
+        private static void DoSendAsync(ThreadTaskWrapper wrapper)
+            => wrapper.Scheduler.Schedule(_DoSend, wrapper);
+
+        //starts without existing executioncontext
+        private static void DoSendAsync(object? state)
+        {
+            ThreadTaskWrapper wrapper = (ThreadTaskWrapper)state!;
+            TransportConnectionContext ctx = wrapper.Ctx;
+            wrapper.Signal(ctx.DoSendAsync());
+        }
 
         protected abstract Task DoReceiveAsync();
         protected abstract Task DoSendAsync();

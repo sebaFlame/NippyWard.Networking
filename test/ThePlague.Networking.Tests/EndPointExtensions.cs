@@ -2,6 +2,8 @@
 using System.Net;
 using System.Net.Sockets;
 
+using System.IO.Pipelines;
+
 using ThePlague.Networking.Connections;
 using ThePlague.Networking.Transports.Sockets;
 using ThePlague.Networking.Transports.Pipes;
@@ -20,7 +22,27 @@ namespace ThePlague.Networking.Tests
             return endpoint switch
             {
                 IPEndPoint
-                    => serverBuilder.UseSocket(endpoint, createName),
+                    => serverBuilder.UseSocket
+                    (
+                        endpoint,
+                        createName/*,
+                        new PipeOptions
+                        (
+                            useSynchronizationContext: false,
+                            resumeWriterThreshold: 1,
+                            pauseWriterThreshold: 1,
+                            writerScheduler: PipeScheduler.Inline,
+                            readerScheduler: PipeScheduler.Inline
+                        ),
+                        new PipeOptions
+                        (
+                            useSynchronizationContext: false,
+                            resumeWriterThreshold: 1,
+                            pauseWriterThreshold: 1,
+                            writerScheduler: PipeScheduler.Inline,
+                            readerScheduler: PipeScheduler.Inline
+                        )*/
+                    ),
                 UnixDomainSocketEndPoint
                     => serverBuilder.UseSocket(endpoint, createName),
                 NamedPipeEndPoint
@@ -40,7 +62,26 @@ namespace ThePlague.Networking.Tests
             return endpoint switch
             {
                 IPEndPoint
-                    => clientBuilder.UseSocket(createName),
+                    => clientBuilder.UseSocket
+                    (
+                        createName/*,
+                        new PipeOptions
+                        (
+                            useSynchronizationContext: false,
+                            resumeWriterThreshold: 1,
+                            pauseWriterThreshold: 1,
+                            writerScheduler: PipeScheduler.Inline,
+                            readerScheduler: PipeScheduler.Inline
+                        ),
+                        new PipeOptions
+                        (
+                            useSynchronizationContext: false,
+                            resumeWriterThreshold: 1,
+                            pauseWriterThreshold: 1,
+                            writerScheduler: PipeScheduler.Inline,
+                            readerScheduler: PipeScheduler.Inline
+                        )*/
+                    ),
                 UnixDomainSocketEndPoint
                     => clientBuilder.UseSocket(createName),
                 NamedPipeEndPoint

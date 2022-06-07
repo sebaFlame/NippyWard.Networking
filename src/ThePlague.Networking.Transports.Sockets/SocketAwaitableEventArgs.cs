@@ -94,9 +94,6 @@ namespace ThePlague.Networking.Transports.Sockets
         }
 
         #region IValueTaskSource implementeation
-        //ensure it does not stay on the IO thread!
-        //when oncompleted gets called, executioncontext/synchronizationcontext should already
-        //be restored
         protected override void OnCompleted(SocketAsyncEventArgs _)
         {
             Action<object?>? c = this._continuation;
@@ -112,7 +109,6 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        //scrap this, SocketAsyncEventArgs should save executioncontext/synchronizationcontext
         //protected override void OnCompleted(SocketAsyncEventArgs _)
         //{
         //    // When the operation completes, see if OnCompleted was already called to hook up a continuation.
@@ -208,7 +204,6 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        //scrap this, SocketAsyncEventArgs should save executioncontext/synchronizationcontext
         //public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
         //{
         //    if (token != _token)

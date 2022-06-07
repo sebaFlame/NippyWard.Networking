@@ -44,8 +44,6 @@ namespace ThePlague.Networking.Transports.Sockets
         public Socket Socket { get; }
 
         private int _socketShutdownKind;
-        private readonly PipeScheduler _receiveScheduler;
-        private readonly PipeScheduler _sendScheduler;
         private readonly WrappedReader _input;
         private readonly WrappedWriter _output;
 
@@ -72,6 +70,8 @@ namespace ThePlague.Networking.Transports.Sockets
                   socket.RemoteEndPoint,
                   sendToSocket,
                   receiveFromSocket,
+                  sendScheduler,
+                  receiveScheduler,
                   featureCollection,
                   name,
                   logger
@@ -84,9 +84,6 @@ namespace ThePlague.Networking.Transports.Sockets
 
             this.Socket = socket;
             this.SocketConnectionOptions = socketConnectionOptions;
-
-            this._receiveScheduler = sendScheduler;
-            this._sendScheduler = receiveScheduler;
 
             this._input = new SocketReader
             (
