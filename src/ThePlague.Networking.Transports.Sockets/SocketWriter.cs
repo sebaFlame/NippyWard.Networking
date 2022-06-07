@@ -25,13 +25,13 @@ namespace ThePlague.Networking.Transports.Sockets
             this._connection = connection;
         }
 
-        public override void Complete(Exception exception = null)
+        public override void Complete(Exception? exception = null)
         {
             this._connection.OutputWriterCompleted(exception);
             base.Complete(exception);
         }
 
-        public override async ValueTask CompleteAsync(Exception exception = null)
+        public override async ValueTask CompleteAsync(Exception? exception = null)
         {
             try
             {

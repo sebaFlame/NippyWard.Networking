@@ -21,11 +21,11 @@ namespace ThePlague.Networking.Transports.Sockets
         (
             EndPoint endpoint,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
-            PipeOptions pipeOptions = null,
-            Socket socket = null,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null,
+            PipeOptions? pipeOptions = null,
+            Socket? socket = null,
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
             => ConnectAsync
@@ -48,12 +48,12 @@ namespace ThePlague.Networking.Transports.Sockets
         (
             EndPoint endpoint,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
-            PipeOptions sendPipeOptions = null,
-            PipeOptions receivePipeOptions = null,
-            Socket socket = null,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null,
+            PipeOptions? sendPipeOptions = null,
+            PipeOptions? receivePipeOptions = null,
+            Socket? socket = null,
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
@@ -93,12 +93,12 @@ namespace ThePlague.Networking.Transports.Sockets
             Pipe sendToSocket,
             Pipe receiveFromSocket,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
-            PipeScheduler sendScheduler = null,
-            PipeScheduler receiveScheduler = null,
-            Socket socket = null,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null,
+            PipeScheduler? sendScheduler = null,
+            PipeScheduler? receiveScheduler = null,
+            Socket? socket = null,
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
@@ -135,9 +135,9 @@ namespace ThePlague.Networking.Transports.Sockets
         (
             EndPoint endpoint,
             SocketConnectionOptions connectionOptions = SocketConnectionOptions.None,
-            Socket socket = null,
-            string name = null,
-            ILogger logger = null,
+            Socket? socket = null,
+            string? name = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
@@ -163,7 +163,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
             SetRecommendedClientOptions(socket);
 
-            logger?.TraceLog(name, $"connecting to {endpoint}");
+            logger?.TraceLog(name ?? nameof(SocketConnectionContext), $"connecting to {endpoint}");
 
             using (SocketAwaitableEventArgs args = new SocketAwaitableEventArgs
             (

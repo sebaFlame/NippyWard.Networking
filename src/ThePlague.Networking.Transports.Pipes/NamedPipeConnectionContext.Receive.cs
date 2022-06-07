@@ -23,8 +23,6 @@ namespace ThePlague.Networking.Transports.Pipes
 
         protected override async Task DoReceiveAsync()
         {
-            await Task.Yield();
-
             Exception? error = null;
             PipeStream inputStream = this._inputStream;
             PipeWriter writer = this._receiveFromEndpoint.Writer;
@@ -32,7 +30,6 @@ namespace ThePlague.Networking.Transports.Pipes
             ValueTask<FlushResult> flushTask;
             FlushResult result;
             Memory<byte> buffer;
-            
 
             this.TraceLog("starting receive loop");
             try

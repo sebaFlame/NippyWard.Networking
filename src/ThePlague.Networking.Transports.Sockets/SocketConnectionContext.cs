@@ -60,14 +60,14 @@ namespace ThePlague.Networking.Transports.Sockets
             PipeScheduler sendScheduler,
             PipeScheduler receiveScheduler,
             SocketConnectionOptions socketConnectionOptions,
-            IFeatureCollection featureCollection = null,
-            string name = null,
-            ILogger logger = null
+            IFeatureCollection? featureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             : base
             (
-                  socket.LocalEndPoint,
-                  socket.RemoteEndPoint,
+                  socket.LocalEndPoint!,
+                  socket.RemoteEndPoint!,
                   sendToSocket,
                   receiveFromSocket,
                   sendScheduler,
@@ -145,7 +145,7 @@ namespace ThePlague.Networking.Transports.Sockets
             return win;
         }
 
-        internal void InputReaderCompleted(Exception ex)
+        internal void InputReaderCompleted(Exception? ex)
         {
             TrySetShutdown(ex, this, PipeShutdownKind.InputReaderCompleted);
             try
@@ -156,7 +156,7 @@ namespace ThePlague.Networking.Transports.Sockets
             { }
         }
 
-        internal void OutputWriterCompleted(Exception ex)
+        internal void OutputWriterCompleted(Exception? ex)
             => TrySetShutdown(ex, this, PipeShutdownKind.OutputWriterCompleted);
 
         protected override void DisposeCore(bool isDisposing)
@@ -214,10 +214,10 @@ namespace ThePlague.Networking.Transports.Sockets
         (
             Socket socket,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
-            PipeOptions pipeOptions = null,
-            IFeatureCollection serverFeatureCollection = null,
-            string name = null,
-            ILogger logger = null
+            PipeOptions? pipeOptions = null,
+            IFeatureCollection? serverFeatureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             => Create
             (
@@ -237,11 +237,11 @@ namespace ThePlague.Networking.Transports.Sockets
         (
             Socket socket,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
-            PipeOptions sendPipeOptions = null,
-            PipeOptions receivePipeOptions = null,
-            IFeatureCollection serverFeatureCollection = null,
-            string name = null,
-            ILogger logger = null
+            PipeOptions? sendPipeOptions = null,
+            PipeOptions? receivePipeOptions = null,
+            IFeatureCollection? serverFeatureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             => Create
             (
@@ -249,8 +249,8 @@ namespace ThePlague.Networking.Transports.Sockets
                 new Pipe(sendPipeOptions ?? PipeOptions.Default),
                 new Pipe(receivePipeOptions ?? PipeOptions.Default),
                 socketConnectionOptions,
-                sendPipeOptions?.ReaderScheduler ?? PipeScheduler.ThreadPool,
-                receivePipeOptions?.WriterScheduler ?? PipeScheduler.ThreadPool,
+                sendPipeOptions?.ReaderScheduler ,
+                receivePipeOptions?.WriterScheduler,
                 serverFeatureCollection,
                 name,
                 logger
@@ -265,19 +265,19 @@ namespace ThePlague.Networking.Transports.Sockets
             Pipe sendToSocket,
             Pipe receiveFromSocket,
             SocketConnectionOptions socketConnectionOptions = SocketConnectionOptions.None,
-            PipeScheduler sendScheduler = null,
-            PipeScheduler receiveScheduler = null,
-            IFeatureCollection serverFeatureCollection = null,
-            string name = null,
-            ILogger logger = null
+            PipeScheduler? sendScheduler = null,
+            PipeScheduler? receiveScheduler = null,
+            IFeatureCollection? serverFeatureCollection = null,
+            string? name = null,
+            ILogger? logger = null
         )
             => new SocketConnectionContext
             (
                 socket,
                 sendToSocket,
                 receiveFromSocket,
-                sendScheduler,
-                receiveScheduler,
+                sendScheduler ?? PipeScheduler.ThreadPool,
+                receiveScheduler ?? PipeScheduler.ThreadPool,
                 socketConnectionOptions,
                 serverFeatureCollection,
                 name,
@@ -349,7 +349,7 @@ namespace ThePlague.Networking.Transports.Sockets
 
         private static bool TrySetShutdown
         (
-            Exception ex,
+            Exception? ex,
             SocketConnectionContext connection,
             PipeShutdownKind kind
         )

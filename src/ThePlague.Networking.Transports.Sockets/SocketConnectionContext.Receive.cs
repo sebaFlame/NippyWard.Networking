@@ -22,17 +22,19 @@ namespace ThePlague.Networking.Transports.Sockets
         /// </summary>
         public int LastReceived { get; private set; }
 
-        private SocketAwaitableEventArgs _readerArgs;
+        private SocketAwaitableEventArgs? _readerArgs;
         private long _totalBytesReceived;
 
         protected override async Task DoReceiveAsync()
         {
-            await Task.Yield();
-
-            Exception error = null;
+            Exception? error = null;
             Socket socket = this.Socket;
             PipeWriter writer = this._receiveFromEndpoint.Writer;
-            SocketAwaitableEventArgs readerArgs = null;
+            SocketAwaitableEventArgs readerArgs = new SocketAwaitableEventArgs
+            (
+                this._receiveScheduler,
+                this._logger
+            );
             bool zeroLengthReads = this.ZeroLengthReads;
             CancellationToken cancellationToken = this.ConnectionClosed;
             ValueTask<FlushResult> flushTask;
@@ -42,11 +44,7 @@ namespace ThePlague.Networking.Transports.Sockets
             this.TraceLog("starting receive loop");
             try
             {
-                this._readerArgs = readerArgs = new SocketAwaitableEventArgs
-                (
-                    this._receiveScheduler,
-                    this._logger
-                );
+                this._readerArgs = readerArgs;
 
                 while(true)
                 {

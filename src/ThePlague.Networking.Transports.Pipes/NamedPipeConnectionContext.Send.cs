@@ -25,8 +25,6 @@ namespace ThePlague.Networking.Transports.Pipes
 
         protected override async Task DoSendAsync()
         {
-            await Task.Yield();
-
             Exception? error = null;
             PipeStream outputStream = this._outputStream;
             PipeReader reader = this._sendToEndpoint.Reader;
@@ -117,7 +115,9 @@ namespace ThePlague.Networking.Transports.Pipes
                     }
                 }
 
+#pragma warning disable CA1416 // Validate platform compatibility
                 outputStream.WaitForPipeDrain();
+#pragma warning restore CA1416 // Validate platform compatibility
             }
             catch (ObjectDisposedException)
             {

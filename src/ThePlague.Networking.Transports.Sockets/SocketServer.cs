@@ -28,12 +28,12 @@ namespace ThePlague.Networking.Transports.Sockets
         public EndPoint EndPoint => this._endpoint;
 
         private readonly EndPoint _endpoint;
-        private Socket _listenerSocket;
-        private PipeOptions _sendOptions;
-        private PipeOptions _receiveOptions;
-        private readonly IFeatureCollection _serverFeatureCollection;
-        private readonly ILogger _logger;
-        private readonly Func<string> _createName;
+        private Socket? _listenerSocket;
+        private PipeOptions? _sendOptions;
+        private PipeOptions? _receiveOptions;
+        private readonly IFeatureCollection? _serverFeatureCollection;
+        private readonly ILogger? _logger;
+        private readonly Func<string>? _createName;
         private readonly SocketAwaitableEventArgs _acceptEventArg;
 
         /// <summary>
@@ -42,9 +42,9 @@ namespace ThePlague.Networking.Transports.Sockets
         public SocketServer
         (
             EndPoint endPoint,
-            IFeatureCollection serverFeatureCollection = null,
-            Func<string> createName = null,
-            ILogger logger = null
+            IFeatureCollection? serverFeatureCollection = null,
+            Func<string>? createName = null,
+            ILogger? logger = null
         )
         {
             this._endpoint = endPoint;
@@ -60,8 +60,8 @@ namespace ThePlague.Networking.Transports.Sockets
         public void Bind
         (
             int listenBacklog = 20,
-            PipeOptions sendOptions = null,
-            PipeOptions receiveOptions = null
+            PipeOptions? sendOptions = null,
+            PipeOptions? receiveOptions = null
         )
         {
             AddressFamily addressFamily =
@@ -106,8 +106,8 @@ namespace ThePlague.Networking.Transports.Sockets
         /// </summary>
         internal void Bind
         (
-            PipeOptions sendOptions,
-            PipeOptions receiveOptions
+            PipeOptions? sendOptions,
+            PipeOptions? receiveOptions
         )
             => this.Bind
             (
@@ -123,7 +123,7 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             this.TraceLog("stopping");
 
-            Socket socket = this._listenerSocket;
+            Socket? socket = this._listenerSocket;
             this._listenerSocket = null;
 
             if(socket is not null)
@@ -136,17 +136,17 @@ namespace ThePlague.Networking.Transports.Sockets
             }
         }
 
-        public async ValueTask<ConnectionContext> AcceptAsync
+        public async ValueTask<ConnectionContext?> AcceptAsync
         (
             CancellationToken cancellationToken = default(CancellationToken)
         )
         {
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((s) => ((SocketServer)s).Stop(), this);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((s) => ((SocketServer?)s!).Stop(), this);
 
             try
             {
                 SocketAwaitableEventArgs args = this._acceptEventArg;
-                Socket socket = this._listenerSocket;
+                Socket socket = this._listenerSocket!;
                 Socket clientSocket;
 
                 ValueTask<Socket> socketTask = this._acceptEventArg.AcceptAsync(socket, cancellationToken);
@@ -212,7 +212,7 @@ namespace ThePlague.Networking.Transports.Sockets
         }
 
         [Conditional("TRACELOG")]
-        private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
+        private void TraceLog(string message, [CallerFilePath] string? file = null, [CallerMemberName] string? caller = null, [CallerLineNumber] int lineNumber = 0)
         {
 #if TRACELOG
             this._logger?.TraceLog($"SocketServer ({this._endpoint})", message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");

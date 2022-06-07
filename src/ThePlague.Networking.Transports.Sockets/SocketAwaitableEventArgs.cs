@@ -36,10 +36,9 @@ namespace ThePlague.Networking.Transports.Sockets
         private CancellationTokenRegistration _cancellationTokenRegistration;
 
         private static readonly Action<object?> _ContinuationCompleted = _ => { };
-
-        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _AcceptAsync;
-        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _ReceiveAsync;
-        private static Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _SendAsync;
+        private static readonly Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _AcceptAsync;
+        private static readonly Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _ReceiveAsync;
+        private static readonly Func<Socket, SocketAsyncEventArgs, CancellationToken, bool> _SendAsync;
 
         static SocketAwaitableEventArgs()
         {
@@ -409,7 +408,7 @@ namespace ThePlague.Networking.Transports.Sockets
         {
             if (error == SocketError.Success)
             {
-                throw new ArgumentException(nameof(error));
+                throw new ArgumentException($"{error} is not an error to abort with");
             }
 
             this.SocketError = error;

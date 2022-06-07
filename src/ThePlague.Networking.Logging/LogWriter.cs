@@ -41,11 +41,13 @@ namespace ThePlague.Networking.Logging
             }
         }
 
-        private ChannelWriter<string> _channelWriter;
-        private Task _doLogWriter;
+        private readonly ChannelWriter<string> _channelWriter;
+        private readonly Task _doLogWriter;
 
         private const string _LogFileName = "log";
+#if LOGBYDATE
         private const string _LogDirName = "logs";
+#endif
 
         private static LogWriter? _Instance;
         private static readonly object _InstanceLock;
@@ -107,7 +109,7 @@ namespace ThePlague.Networking.Logging
             await Task.Yield();
 
             ValueTask<string> lineTask;
-            string line;
+            string? line;
 
             try
             {
@@ -200,6 +202,8 @@ namespace ThePlague.Networking.Logging
             { }
 
             await base.DisposeAsync();
+
+            GC.SuppressFinalize(this);
         }
 
         public override void Close()

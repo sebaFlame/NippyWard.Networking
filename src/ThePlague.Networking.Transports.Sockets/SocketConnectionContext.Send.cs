@@ -19,17 +19,19 @@ namespace ThePlague.Networking.Transports.Sockets
         public override long BytesSent
             => Interlocked.Read(ref this._totalBytesSent);
 
-        private SocketAwaitableEventArgs _writerArgs;
-        private List<ArraySegment<byte>> _spareBuffer;
+        private SocketAwaitableEventArgs? _writerArgs;
+        private List<ArraySegment<byte>>? _spareBuffer;
         private long _totalBytesSent;
 
         protected override async Task DoSendAsync()
         {
-            await Task.Yield();
-
-            Exception error = null;
+            Exception? error = null;
             Socket socket = this.Socket;
-            SocketAwaitableEventArgs writerArgs = null;
+            SocketAwaitableEventArgs writerArgs = new SocketAwaitableEventArgs
+            (
+                this._sendScheduler,
+                this._logger
+            );
             PipeReader reader = this._sendToEndpoint.Reader;
             PipeWriter writer = this._sendToEndpoint.Writer;
             CancellationToken cancellationToken = this.ConnectionClosed;
@@ -40,11 +42,7 @@ namespace ThePlague.Networking.Transports.Sockets
             this.TraceLog("starting send loop");
             try
             {
-                this._writerArgs = writerArgs = new SocketAwaitableEventArgs
-                (
-                    this._sendScheduler,
-                    this._logger
-                );
+                this._writerArgs = writerArgs;
 
                 while(true)
                 {
@@ -247,7 +245,7 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket,
             SocketAwaitableEventArgs args,
             in ReadOnlySequence<byte> buffer,
-            ref List<ArraySegment<byte>> spareBuffer,
+            ref List<ArraySegment<byte>>? spareBuffer,
             CancellationToken cancellationToken = default
         )
         {
@@ -275,7 +273,7 @@ namespace ThePlague.Networking.Transports.Sockets
             Socket socket,
             SocketAwaitableEventArgs args,
             ReadOnlyMemory<byte> memory,
-            ref List<ArraySegment<byte>> spareBuffer,
+            ref List<ArraySegment<byte>>? spareBuffer,
             CancellationToken cancellationToken = default
         )
 #pragma warning restore RCS1231 // Make parameter ref read-only.
@@ -287,9 +285,9 @@ namespace ThePlague.Networking.Transports.Sockets
             return args.SendAsync(socket, cancellationToken);
         }
 
-        private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>> spareBuffer)
+        private static IList<ArraySegment<byte>> GetBufferList(SocketAsyncEventArgs args, in ReadOnlySequence<byte> buffer, ref List<ArraySegment<byte>>? spareBuffer)
         {
-            IList<ArraySegment<byte>> list = (args?.BufferList as List<ArraySegment<byte>>) ?? GetSpareBuffer(ref spareBuffer);
+            IList<ArraySegment<byte>>? list = args?.BufferList ?? GetSpareBuffer(ref spareBuffer);
 
             if (list is null)
             {
@@ -323,14 +321,14 @@ namespace ThePlague.Networking.Transports.Sockets
             return list;
         }
 
-        private static List<ArraySegment<byte>> GetSpareBuffer(ref List<ArraySegment<byte>> spareBuffer)
+        private static List<ArraySegment<byte>>? GetSpareBuffer(ref List<ArraySegment<byte>>? spareBuffer)
         {
-            var existing = Interlocked.Exchange(ref spareBuffer, null);
+            List<ArraySegment<byte>>? existing = Interlocked.Exchange(ref spareBuffer, null);
             existing?.Clear();
             return existing;
         }
 
-        private static void RecycleSpareBuffer(SocketAwaitableEventArgs args, ref List<ArraySegment<byte>> spareBuffer)
+        private static void RecycleSpareBuffer(SocketAwaitableEventArgs args, ref List<ArraySegment<byte>>? spareBuffer)
         {
             // note: the BufferList getter is much less expensive then the setter.
             if (args?.BufferList is List<ArraySegment<byte>> list)

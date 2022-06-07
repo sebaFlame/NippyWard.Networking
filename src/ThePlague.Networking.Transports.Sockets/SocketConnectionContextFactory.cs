@@ -14,19 +14,19 @@ namespace ThePlague.Networking.Transports.Sockets
 {
     public class SocketConnectionContextFactory : IConnectionFactory
     {
-        private IFeatureCollection _featureCollection;
-        private readonly Func<string> _createName;
-        private readonly PipeOptions _sendOptions;
-        private readonly PipeOptions _receiveOptions;
-        private readonly ILogger _logger;
+        private IFeatureCollection? _featureCollection;
+        private readonly Func<string>? _createName;
+        private readonly PipeOptions? _sendOptions;
+        private readonly PipeOptions? _receiveOptions;
+        private readonly ILogger? _logger;
 
         public SocketConnectionContextFactory
         (
-            Func<string> createName = null,
-            PipeOptions sendOptions = null,
-            PipeOptions receiveOptions = null,
-            IFeatureCollection featureCollection = null,
-            ILogger logger = null
+            Func<string>? createName = null,
+            PipeOptions? sendOptions = null,
+            PipeOptions? receiveOptions = null,
+            IFeatureCollection? featureCollection = null,
+            ILogger? logger = null
         )
         {
             this._createName = createName;

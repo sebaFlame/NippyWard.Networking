@@ -15,19 +15,19 @@ namespace ThePlague.Networking.Transports.Sockets
     public class SocketConnectionContextListenerFactory
         : IConnectionListenerFactory
     {
-        private readonly IFeatureCollection _featureCollection;
-        private readonly ILogger _logger;
-        private readonly Func<string> _createName;
-        private readonly PipeOptions _sendOptions;
-        private readonly PipeOptions _receiveOptions;
+        private readonly IFeatureCollection? _featureCollection;
+        private readonly ILogger? _logger;
+        private readonly Func<string>? _createName;
+        private readonly PipeOptions? _sendOptions;
+        private readonly PipeOptions? _receiveOptions;
 
         public SocketConnectionContextListenerFactory
         (
-            Func<string> createName = null,
-            PipeOptions sendOptions = null,
-            PipeOptions receiveOptions = null,
-            IFeatureCollection featureCollection = null,
-            ILogger logger = null
+            Func<string>? createName = null,
+            PipeOptions? sendOptions = null,
+            PipeOptions? receiveOptions = null,
+            IFeatureCollection? featureCollection = null,
+            ILogger? logger = null
         )
         {
             this._createName = createName;
