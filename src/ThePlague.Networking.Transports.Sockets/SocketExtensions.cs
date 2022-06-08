@@ -9,8 +9,6 @@ using Microsoft.Extensions.Logging;
 using ThePlague.Networking.Connections;
 using ThePlague.Networking.Logging;
 
-#nullable enable
-
 namespace ThePlague.Networking.Transports.Sockets
 {
     public static class SocketExtensions
@@ -20,7 +18,9 @@ namespace ThePlague.Networking.Transports.Sockets
         /// This guarantees a <see cref="PipeWriter.FlushAsync(System.Threading.CancellationToken)"/> always completely
         /// flushes the <see cref="PipeReader.ReadAsync(System.Threading.CancellationToken)"/>.
         /// </summary>
+#pragma warning disable CA2211 // Non-constant fields should not be visible
         public static PipeOptions _BlockingOptions;
+#pragma warning restore CA2211 // Non-constant fields should not be visible
 
         static SocketExtensions()
         {

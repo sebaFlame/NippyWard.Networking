@@ -9,8 +9,6 @@ using System.Threading.Tasks;
 using System.IO.Pipelines;
 using Microsoft.Extensions.Logging;
 
-using ThePlague.Networking.Tls.Buffer;
-
 namespace ThePlague.Networking.Tls
 {
     internal class TlsPipeWriter : PipeWriter

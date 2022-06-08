@@ -14,17 +14,17 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// The certificate used to establish the TLS pipe.
         /// </summary>
-        X509Certificate Certificate { get; }
+        X509Certificate? Certificate { get; }
 
         /// <summary>
         /// The certificate received from remote. 
         /// This is the client certificate (if any) when called from server.
         /// </summary>
-        X509Certificate RemoteCertificate { get; }
+        X509Certificate? RemoteCertificate { get; }
 
         /// <summary>
         /// The (reusable) session for this (client) connection.
         /// </summary>
-        SslSession Session { get; }
+        SslSession? Session { get; }
     }
 }

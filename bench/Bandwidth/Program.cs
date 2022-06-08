@@ -156,7 +156,6 @@ namespace Bandwidth
 
             //create key
             openSslKey = new RSAKey(2048);
-            openSslKey.GenerateKey();
 
             //create certificate
             openSslCertificate = new OpenSSL.Core.X509.X509Certificate

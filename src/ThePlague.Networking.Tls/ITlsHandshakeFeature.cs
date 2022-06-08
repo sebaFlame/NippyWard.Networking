@@ -14,12 +14,12 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// The protocol used for this connection
         /// </summary>
-        SslProtocol Protocol { get; }
+        SslProtocol? Protocol { get; }
 
         /// <summary>
         /// The cipher used for this TLS pipe
         /// </summary>
-        string Cipher { get; }
+        string? Cipher { get; }
 
         /// <summary>
         /// Renegotiate the current TLS connection

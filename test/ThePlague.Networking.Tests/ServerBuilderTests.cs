@@ -99,7 +99,7 @@ namespace ThePlague.Networking.Tests
                                 int index = Interlocked.Increment(ref serverCount);
                                 TaskCompletionSource t = tcs[--index];
 
-                                CancellationTokenRegistration reg = ctx.ConnectionClosed.UnsafeRegister((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), t);
+                                CancellationTokenRegistration reg = ctx.ConnectionClosed.UnsafeRegister((tcs) => ((TaskCompletionSource?)tcs!).SetCanceled(), t);
                                 try
                                 {
                                     await t.Task;

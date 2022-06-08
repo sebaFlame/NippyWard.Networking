@@ -33,10 +33,10 @@ namespace ThePlague.Networking.Tls
         public override void CancelPendingRead()
             => this._tlsPipe.CancelPendingRead();
 
-        public override void Complete(Exception exception = null)
+        public override void Complete(Exception? exception = null)
             => this._tlsPipe.CompleteReader(exception);
 
-        public override ValueTask CompleteAsync(Exception exception = null)
+        public override ValueTask CompleteAsync(Exception? exception = null)
             => this._tlsPipe.CompleteReaderAsync(exception);
 
         public override ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)

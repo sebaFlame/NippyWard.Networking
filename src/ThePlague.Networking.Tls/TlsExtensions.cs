@@ -18,7 +18,7 @@ namespace ThePlague.Networking.Tls
     {
         public static IConnectionBuilder UseClientTls(this IConnectionBuilder connectionBuilder, SslOptions sslOptions)
         {
-            ILogger logger = connectionBuilder.ApplicationServices.CreateLogger<TlsClientConnectionMiddleware>();
+            ILogger? logger = connectionBuilder.ApplicationServices.CreateLogger<TlsClientConnectionMiddleware>();
             return connectionBuilder.Use(next => new TlsClientConnectionMiddleware(next, sslOptions, logger).OnConnectionAsync);
         }
 
@@ -48,7 +48,7 @@ namespace ThePlague.Networking.Tls
 
         public static IConnectionBuilder UseServerTls(this IConnectionBuilder connectionBuilder, SslOptions sslOptions)
         {
-            ILogger logger = connectionBuilder.ApplicationServices.CreateLogger<TlsServerConnectionMiddleware>();
+            ILogger? logger = connectionBuilder.ApplicationServices.CreateLogger<TlsServerConnectionMiddleware>();
             return connectionBuilder.Use(next => new TlsServerConnectionMiddleware(next, sslOptions, logger).OnConnectionAsync);
         }
 

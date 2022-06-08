@@ -11,8 +11,6 @@ using Microsoft.Extensions.Logging;
 using OpenSSL.Core.SSL;
 using ThePlague.Networking.Logging;
 
-#nullable enable
-
 namespace ThePlague.Networking.Tls
 {
     internal class TlsServerConnectionMiddleware
@@ -48,24 +46,21 @@ namespace ThePlague.Networking.Tls
 
             try
             {
-                using (TlsPipe pipe = new TlsPipe
+                this._logger?.DebugLog(context.ConnectionId, "Activating TLS transport");
+
+                using (TlsPipe pipe = await TlsPipe.AuthenticateAsServerAsync
                 (
                     context.ConnectionId,
                     oldPipe.Input,
                     oldPipe.Output,
+                    this._sslContext,
+                    this._sslOptions.Pool,
                     this._logger,
-                    this._sslOptions.Pool
+                    context.ConnectionClosed
                 ))
                 {
                     context.Features.Set<ITlsConnectionFeature>(pipe);
                     context.Features.Set<ITlsHandshakeFeature>(pipe);
-
-                    this._logger?.DebugLog(context.ConnectionId, "Activating TLS transport");
-                    await pipe.AuthenticateAsServerAsync
-                    (
-                        this._sslContext,
-                        context.ConnectionClosed
-                    );
 
                     context.Transport = pipe;
 

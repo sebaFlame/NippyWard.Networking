@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Buffers;
 
 using System.IO.Pipelines;
+using Microsoft.Extensions.Logging;
 
 using OpenSSL.Core.SSL.Buffer;
 using OpenSSL.Core.SSL;
@@ -17,22 +18,64 @@ namespace ThePlague.Networking.Tls
 {
     internal partial class TlsPipe
     {
-        #region Client Authentication wrapper methods
-        public Task AuthenticateAsClientAsync
+        private static async Task<TlsPipe> Authenticate
         (
-            SslStrength? sslStrength = null,
-            SslProtocol? sslProtocol = null,
-            X509Store certificateStore = null,
-            X509Certificate certificate = null,
-            PrivateKey privateKey = null,
-            ClientCertificateCallbackHandler clientCertificateCallbackHandler = null,
-            RemoteCertificateValidationHandler remoteCertificateValidationHandler = null,
-            SslSession previousSession = null,
-            IEnumerable<string> ciphers = null,
+            Ssl ssl,
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
-            this._ssl = Ssl.CreateClientSsl
+            TlsBuffer decryptedReadBuffer = new TlsBuffer(pool);
+            TlsBuffer unencryptedWriteBuffer = new TlsBuffer(pool);
+
+            await Authenticate
+            (
+                ssl,
+                connectionId,
+                innerReader,
+                decryptedReadBuffer,
+                innerWriter,
+                logger,
+                cancellationToken
+            );
+
+            return new TlsPipe
+            (
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                decryptedReadBuffer,
+                unencryptedWriteBuffer,
+                logger
+            );
+        }
+
+        #region Client Authentication wrapper methods
+        public static Task<TlsPipe> AuthenticateAsClientAsync
+        (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
+            MemoryPool<byte>? pool = null,
+            SslStrength? sslStrength = null,
+            SslProtocol? sslProtocol = null,
+            X509Store? certificateStore = null,
+            X509Certificate? certificate = null,
+            PrivateKey? privateKey = null,
+            ClientCertificateCallbackHandler? clientCertificateCallbackHandler = null,
+            RemoteCertificateValidationHandler? remoteCertificateValidationHandler = null,
+            SslSession? previousSession = null,
+            IEnumerable<string>? ciphers = null,
+            ILogger? logger = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Ssl ssl = Ssl.CreateClientSsl
             (
                 sslStrength: sslStrength,
                 sslProtocol: sslProtocol,
@@ -45,12 +88,14 @@ namespace ThePlague.Networking.Tls
                 ciphers: ciphers
             );
 
-            return this.Authenticate
+            return Authenticate
             (
-                this._ssl,
-                this._innerReader,
-                this._decryptedReadBuffer,
-                this._innerWriter,
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                pool,
+                logger,
                 cancellationToken
             );
         }
@@ -58,23 +103,30 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Authenticate as client using <paramref name="sslOptions"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             SslOptions sslOptions,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
-            this._ssl = Ssl.CreateClientSsl
+            Ssl ssl = Ssl.CreateClientSsl
             (
                 sslOptions
             );
 
-            return this.Authenticate
+            return Authenticate
             (
-                this._ssl,
-                this._innerReader,
-                this._decryptedReadBuffer,
-                this._innerWriter,
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                pool,
+                logger,
                 cancellationToken
             );
         }
@@ -82,172 +134,195 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Authenticate as client using all defaults
         /// </summary>
-        public Task AuthenticateAsClientAsync(CancellationToken cancellationToken = default)
-            => this.AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
+        (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
+            CancellationToken cancellationToken = default
+        )
+            => AuthenticateAsClientAsync
             (
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client using a strength preset
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             SslStrength sslStrength,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
+                connectionId,
+                innerReader,
+                innerWriter,
                 sslStrength: sslStrength,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client using protocol <paramref name="sslProtocol"/> using optional ciphers <paramref name="allowedCiphers"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             SslProtocol sslProtocol,
-            IEnumerable<string> allowedCiphers = null,
+            MemoryPool<byte>? pool = null,
+            IEnumerable<string>? allowedCiphers = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 sslProtocol: sslProtocol,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                ciphers: allowedCiphers,
+                ciphers: allowedCiphers,                                
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client and validate remote certificate using <paramref name="remoteValidation"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             RemoteCertificateValidationHandler remoteValidation,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 remoteCertificateValidationHandler: remoteValidation,
-                null,
-                null,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client and validate remote certificate using a certificate collection in <paramref name="caStore"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Store caStore,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 certificateStore: caStore,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client using client ceritifacet <paramref name="clientCertificate"/> and client key <paramref name="clientKey"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate clientCertificate,
             PrivateKey clientKey,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 certificate: clientCertificate,
                 privateKey: clientKey,
-                null,
-                null,
-                null,
-                null,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
         /// <summary>
         /// Authenticate as client and pick a client certificate and client key using <paramref name="clientCertificateCallback"/>
         /// </summary>
-        public Task AuthenticateAsClientAsync
+        public static Task<TlsPipe> AuthenticateAsClientAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             ClientCertificateCallbackHandler clientCertificateCallback,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsClientAsync
+            => AuthenticateAsClientAsync
             (
-                null,
-                null,
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 clientCertificateCallbackHandler: clientCertificateCallback,
-                null,
-                null,
-                null,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
         #endregion
 
         #region server authentication wrappers
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
+            MemoryPool<byte>? pool = null,
             SslStrength? sslStrength = null,
             SslProtocol? sslProtocol = null,
-            X509Store certificateStore = null,
-            X509Certificate certificate = null,
-            PrivateKey privateKey = null,
-            ClientCertificateCallbackHandler clientCertificateCallbackHandler = null,
-            RemoteCertificateValidationHandler remoteCertificateValidationHandler = null,
-            SslSession previousSession = null,
-            IEnumerable<string> ciphers = null,
+            X509Store? certificateStore = null,
+            X509Certificate? certificate = null,
+            PrivateKey? privateKey = null,
+            ClientCertificateCallbackHandler? clientCertificateCallbackHandler = null,
+            RemoteCertificateValidationHandler? remoteCertificateValidationHandler = null,
+            SslSession? previousSession = null,
+            IEnumerable<string>? ciphers = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
-            this._ssl = Ssl.CreateServerSsl
+            Ssl ssl = Ssl.CreateServerSsl
             (
                 sslStrength: sslStrength,
                 sslProtocol: sslProtocol,
@@ -260,12 +335,14 @@ namespace ThePlague.Networking.Tls
                 ciphers: ciphers
             );
 
-            return this.Authenticate
+            return Authenticate
             (
-                this._ssl,
-                this._innerReader,
-                this._decryptedReadBuffer,
-                this._innerWriter,
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                pool,
+                logger,
                 cancellationToken
             );
         }
@@ -273,23 +350,30 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Authenticate as server using <paramref name="sslOptions"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             SslOptions sslOptions,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
-            this._ssl = Ssl.CreateServerSsl
+            Ssl ssl = Ssl.CreateServerSsl
             (
                 sslOptions
             );
 
-            return this.Authenticate
+            return Authenticate
             (
-                this._ssl,
-                this._innerReader,
-                this._decryptedReadBuffer,
-                this._innerWriter,
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                pool,
+                logger,
                 cancellationToken
             );
         }
@@ -297,23 +381,30 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Authenticate as server using a shared context <paramref name="sslContext"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             SslContext sslContext,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
         {
-            this._ssl = Ssl.CreateServerSsl
+            Ssl ssl =  Ssl.CreateServerSsl
             (
                 sslContext
             );
 
-            return this.Authenticate
+            return Authenticate
             (
-                this._ssl,
-                this._innerReader,
-                this._decryptedReadBuffer,
-                this._innerWriter,
+                ssl,
+                connectionId,
+                innerReader,
+                innerWriter,
+                pool,
+                logger,
                 cancellationToken
             );
         }
@@ -321,23 +412,26 @@ namespace ThePlague.Networking.Tls
         /// <summary>
         /// Authenticate as server using certificate <paramref name="serverCertificate"/> and key <paramref name="privateKey"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate serverCertificate,
             PrivateKey serverKey,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsServerAsync
+            => AuthenticateAsServerAsync
             (
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
+                pool: pool,
                 certificate: serverCertificate,
                 privateKey: serverKey,
-                null,
-                null,
-                null,
-                null,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
@@ -345,24 +439,28 @@ namespace ThePlague.Networking.Tls
         /// Authenticate as server using certificate <paramref name="serverCertificate"/> and key <paramref name="privateKey"/>
         /// and verify client ceritificate using a certificate collection in <paramref name="caStore"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate serverCertificate,
             PrivateKey serverKey,
             X509Store caStore,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsServerAsync
+            => AuthenticateAsServerAsync
             (
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
                 certificateStore: caStore,
                 certificate: serverCertificate,
                 privateKey: serverKey,
-                null,
-                null,
-                null,
-                null,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
@@ -370,24 +468,28 @@ namespace ThePlague.Networking.Tls
         /// Authenticate as server using certificate <paramref name="serverCertificate"/> and key <paramref name="privateKey"/>
         /// and verify client ceritificate using <paramref name="remoteCertificateValidationHandler"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate serverCertificate,
             PrivateKey serverKey,
             RemoteCertificateValidationHandler remoteCertificateValidationHandler,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsServerAsync
+            => AuthenticateAsServerAsync
             (
-                null,
-                null,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
                 certificate: serverCertificate,
                 privateKey: serverKey,
-                null,
                 remoteCertificateValidationHandler: remoteCertificateValidationHandler,
-                null,
-                null,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
@@ -395,24 +497,28 @@ namespace ThePlague.Networking.Tls
         /// Authenticate as server using certificate <paramref name="serverCertificate"/> and key <paramref name="privateKey"/>
         /// using a strength preset
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe> AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate serverCertificate,
             PrivateKey serverKey,
             SslStrength sslStrength,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsServerAsync
+            => AuthenticateAsServerAsync
             (
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
                 sslStrength: sslStrength,
-                null,
-                null,
                 certificate: serverCertificate,
                 privateKey: serverKey,
-                null,
-                null,
-                null,
-                null,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
 
@@ -420,25 +526,29 @@ namespace ThePlague.Networking.Tls
         /// Authenticate as server using certificate <paramref name="serverCertificate"/> and key <paramref name="privateKey"/>
         /// using protocol <paramref name="sslProtocol"/> using optional ciphers <paramref name="allowedCiphers"/>
         /// </summary>
-        public Task AuthenticateAsServerAsync
+        public static Task<TlsPipe>  AuthenticateAsServerAsync
         (
+            string connectionId,
+            PipeReader innerReader,
+            PipeWriter innerWriter,
             X509Certificate serverCertificate,
             PrivateKey serverKey,
             SslProtocol sslProtocol,
-            IEnumerable<string> allowedCiphers = null,
+            IEnumerable<string>? allowedCiphers = null,
+            MemoryPool<byte>? pool = null,
+            ILogger? logger = null,
             CancellationToken cancellationToken = default
         )
-            => this.AuthenticateAsServerAsync
+            => AuthenticateAsServerAsync
             (
-                null,
-                sslProtocol: sslProtocol,
-                null,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter, sslProtocol: sslProtocol,
                 certificate: serverCertificate,
                 privateKey: serverKey,
-                null,
-                null,
-                null,
                 ciphers: allowedCiphers,
+                pool: pool,
+                logger: logger,
                 cancellationToken: cancellationToken
            );
         #endregion

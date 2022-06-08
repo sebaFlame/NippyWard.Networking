@@ -28,49 +28,50 @@ namespace ThePlague.Networking.Tls
         #endregion
 
         #region ITlsConnectionFeature
-        public X509Certificate Certificate => this._ssl.Certificate;
-        public X509Certificate RemoteCertificate => this._ssl.RemoteCertificate;
-        public SslSession Session => this._ssl.Session;
+        public X509Certificate? Certificate => this._ssl.Certificate;
+        public X509Certificate? RemoteCertificate => this._ssl.RemoteCertificate;
+        public SslSession? Session => this._ssl.Session;
         #endregion
 
         #region ITlsHandshakeFeature
-        public string Cipher => this._ssl.Cipher;
-        public SslProtocol Protocol => this._ssl.Protocol;
+        public string? Cipher => this._ssl.Cipher;
+        public SslProtocol? Protocol => this._ssl.Protocol;
         #endregion
 
         internal readonly TlsPipeReader TlsPipeReader;
         internal readonly TlsPipeWriter TlsPipeWriter;
 
         private readonly string _connectionId;
-        private readonly ILogger _logger;
+        private readonly ILogger? _logger;
         private readonly PipeReader _innerReader;
         private readonly PipeWriter _innerWriter;
-
-        private static Task _WriteCompletedTask;
-        private Task _writeAwaiter;
-        private TlsPipeValueTaskAwaiter _renegotiateWaiter;
-        private TlsPipeValueTaskAwaiter _shutdownWaiter;
-
-        private Ssl _ssl;
-
+        private readonly Ssl _ssl;
         private readonly TlsBuffer _decryptedReadBuffer;
         private readonly TlsBuffer _unencryptedWriteBuffer;
+
+        private Task? _writeAwaiter;
+        private TlsPipeValueTaskAwaiter? _renegotiateWaiter;
+        private TlsPipeValueTaskAwaiter? _shutdownWaiter;
+
+        private static Task _WriteCompletedTask;
 
         static TlsPipe()
         {
             _WriteCompletedTask = Task.CompletedTask;
         }
 
-        public TlsPipe
+        private TlsPipe
         (
+            Ssl ssl,
             string connectionId,
             PipeReader innerReader,
             PipeWriter innerWriter,
             TlsBuffer decryptedReadBuffer,
             TlsBuffer unencryptedWriteBuffer,
-            ILogger logger = null
+            ILogger? logger = null
         )
         {
+            this._ssl = ssl;
             this._connectionId = connectionId;
 
             this._decryptedReadBuffer = decryptedReadBuffer;
@@ -86,34 +87,17 @@ namespace ThePlague.Networking.Tls
             this._writeAwaiter = null;
         }
 
-        public TlsPipe
-        (
-            string connectionId,
-            PipeReader innerReader,
-            PipeWriter innerWriter,
-            ILogger logger = null,
-            MemoryPool<byte> pool = null
-        )
-            : this
-            (
-                  connectionId,
-                  innerReader,
-                  innerWriter,
-                  new TlsBuffer(pool),
-                  new TlsBuffer(pool),
-                  logger
-            )
-        { }
-
         #region authentication
         //TODO: when PipeScheduler.ThreadPool, resumeWriterThreshold and pauseWriterThreshold are enabled
         //how to guarantee a send?
-        private async Task Authenticate
+        private static async Task Authenticate
         (
             Ssl ssl,
+            string connectionId,
             PipeReader pipeReader,
             TlsBuffer decryptedReadBuffer,
             PipeWriter pipeWriter,
+            ILogger? logger,
             CancellationToken cancellationToken
         )
         {
@@ -125,11 +109,11 @@ namespace ThePlague.Networking.Tls
             ReadOnlySequence<byte> buffer;
             SequencePosition read;
 
-            this.TraceLog($"authenticating TLS as {(ssl.IsServer ? "server" : "client")}");
+            logger?.TraceLog(connectionId, $"authenticating TLS as {(ssl.IsServer ? "server" : "client")}");
 
             while (!ssl.DoHandshake(out sslState))
             {
-                this.TraceLog($"authenticating state of {sslState} for {(ssl.IsServer ? "server" : "client")}");
+                logger?.TraceLog(connectionId, $"authenticating state of {sslState} for {(ssl.IsServer ? "server" : "client")}");
 
                 do
                 {
@@ -143,7 +127,7 @@ namespace ThePlague.Networking.Tls
                             out _
                         );
 
-                        this.TraceLog($"authenticating write of {pipeWriter.UnflushedBytes} for {(ssl.IsServer ? "server" : "client")}");
+                        logger?.TraceLog(connectionId, $"authenticating write of {pipeWriter.UnflushedBytes} for {(ssl.IsServer ? "server" : "client")}");
 
                         if (pipeWriter.UnflushedBytes == 0)
                         {
@@ -174,7 +158,7 @@ namespace ThePlague.Networking.Tls
                                 ThrowPipeCompleted();
                             }
 
-                            this.TraceLog($"pipe writer completed during handshake with state {sslState}");
+                            logger?.TraceLog(connectionId, $"pipe writer completed during handshake with state {sslState}");
 
                             //user data might have been received, leave further processing to consumer
                             break;
@@ -208,7 +192,7 @@ namespace ThePlague.Networking.Tls
 
                         try
                         {
-                            this.TraceLog($"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
+                            logger?.TraceLog(connectionId, $"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
 
                             sslState = ssl.ReadSsl
                             (
@@ -234,7 +218,7 @@ namespace ThePlague.Networking.Tls
                                 ThrowPipeCompleted();
                             }
 
-                            this.TraceLog($"pipe reader completed during handshake with state {sslState}");
+                            logger?.TraceLog(connectionId, $"pipe reader completed during handshake with state {sslState}");
 
                             //user data might have been received, leave further processing to consumer
                             break;
@@ -244,7 +228,7 @@ namespace ThePlague.Networking.Tls
                     || sslState.WantsWrite());
             }
 
-            this.TraceLog("authenticated TLS");
+            logger?.TraceLog(connectionId, "authenticated TLS");
         }
         #endregion
 
@@ -258,10 +242,10 @@ namespace ThePlague.Networking.Tls
         internal void CancelPendingRead()
             => this._innerReader.CancelPendingRead();
 
-        internal void CompleteReader(Exception exception = null)
+        internal void CompleteReader(Exception? exception = null)
             => this._innerReader.Complete(exception);
 
-        internal ValueTask CompleteReaderAsync(Exception exception = null)
+        internal ValueTask CompleteReaderAsync(Exception? exception = null)
             => this._innerReader.CompleteAsync(exception);
 
         internal ValueTask<ReadResult> ReadAsync(CancellationToken cancellationToken = default)
@@ -508,7 +492,7 @@ namespace ThePlague.Networking.Tls
 
             //use a Task based one as there could be multiple awaiters
             TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((tcs) => ((TaskCompletionSource)tcs).SetCanceled(), tcs);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((tcs) => ((TaskCompletionSource?)tcs!).SetCanceled(), tcs);
 
             //do a zero length write
             try
@@ -658,7 +642,7 @@ namespace ThePlague.Networking.Tls
             CancellationToken cancellationToken
         )
         {
-            Task writeAwaitable;
+            Task? writeAwaitable;
             ValueTask<FlushResult> flushTask;
             SequencePosition readPosition;
 #if TRACELOG
@@ -1005,7 +989,7 @@ namespace ThePlague.Networking.Tls
             public ValueTaskSourceStatus GetStatus(short token)
                 => this._core.GetStatus(token);
 
-            public void OnCompleted(Action<object> continuation, object state, short token, ValueTaskSourceOnCompletedFlags flags)
+            public void OnCompleted(Action<object?> continuation, object? state, short token, ValueTaskSourceOnCompletedFlags flags)
                 => this._core.OnCompleted(continuation, state, token, flags);
 
             public void SetResult(bool result)
@@ -1157,7 +1141,7 @@ namespace ThePlague.Networking.Tls
             => throw new TlsShutdownException();
 
         [Conditional("TRACELOG")]
-        private void TraceLog(string message, [CallerFilePath] string file = null, [CallerMemberName] string caller = null, [CallerLineNumber] int lineNumber = 0)
+        private void TraceLog(string message, [CallerFilePath] string? file = null, [CallerMemberName] string? caller = null, [CallerLineNumber] int lineNumber = 0)
         {
 #if TRACELOG
             this._logger?.TraceLog(this._connectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");

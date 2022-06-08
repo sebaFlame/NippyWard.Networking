@@ -26,8 +26,8 @@ namespace ThePlague.Networking.Tests
         private const string _ServerHello = "Hello Client";
         private const string _ClientHello = "Hello Server";
 
-        private ITestOutputHelper _testOutputHelper;
-        protected readonly ILogger _logger;
+        private readonly ITestOutputHelper _testOutputHelper;
+        protected readonly ILogger? _logger;
 
         public BaseDataTests(ServicesState serviceState, ITestOutputHelper testOutputHelper)
             : base(serviceState)
@@ -43,7 +43,7 @@ namespace ThePlague.Networking.Tests
             int maxBufferSize,
             int testSize,
             Memory<byte> sent,
-            ILogger logger,
+            ILogger? logger,
             bool sendContinuous = false,
             CancellationToken cancellationToken = default
         )
@@ -85,7 +85,7 @@ namespace ThePlague.Networking.Tests
 
                     //fill buffer with random data
                     writeMemory = writer.GetMemory(concreteLength);
-                    logger.TraceLog(connectionId, "buffer acquired");
+                    logger?.TraceLog(connectionId, "buffer acquired");
 
                     writeMemory
                         .Slice(0, concreteLength)
@@ -95,7 +95,7 @@ namespace ThePlague.Networking.Tests
                     //only advance computed size, should always be >= 0
                     //because the loop will end after this call
                     writer.Advance(concreteLength);
-                    logger.TraceLog(connectionId, $"buffer advanced ({concreteLength})");
+                    logger?.TraceLog(connectionId, $"buffer advanced ({concreteLength})");
 
                     //copy data before flush
                     //else it might get replaced with incorrect data
@@ -109,32 +109,32 @@ namespace ThePlague.Networking.Tests
 
                     bytesSent += concreteLength;
 
-                    logger.TraceLog(connectionId, $"flushing {concreteLength} of {index}");
+                    logger?.TraceLog(connectionId, $"flushing {concreteLength} of {index}");
 
-                    logger.TraceLog(connectionId, "flush initiated");
+                    logger?.TraceLog(connectionId, "flush initiated");
                     flushResultTask = writer.FlushAsync(cancellationToken);
 
                     if (!flushResultTask.IsCompletedSuccessfully)
                     {
                         flushResult = await flushResultTask;
-                        logger.TraceLog(connectionId, "async flush");
+                        logger?.TraceLog(connectionId, "async flush");
                     }
                     else
                     {
                         flushResult = flushResultTask.Result;
-                        logger.TraceLog(connectionId, "sync async flush");
+                        logger?.TraceLog(connectionId, "sync async flush");
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    logger.TraceLog(connectionId, "writer canceled");
+                    logger?.TraceLog(connectionId, "writer canceled");
                     return bytesSent;
                 }
 
                 if (flushResult.IsCompleted
                     || flushResult.IsCanceled)
                 {
-                    logger.TraceLog(connectionId, "writer completed/canceled");
+                    logger?.TraceLog(connectionId, "writer completed/canceled");
                     break;
                 }
             }
@@ -148,7 +148,7 @@ namespace ThePlague.Networking.Tests
             PipeReader pipeReader,
             int testSize,
             Memory<byte> received,
-            ILogger logger,
+            ILogger? logger,
             bool receiveContinuous = true,
             CancellationToken cancellationToken = default
         )
@@ -167,27 +167,27 @@ namespace ThePlague.Networking.Tests
                 try
                 {
                     //do not pass cancellation. end should come from peer
-                    logger.TraceLog(connectionId, "read initiated");
+                    logger?.TraceLog(connectionId, "read initiated");
                     readResultTask = pipeReader.ReadAsync(cancellationToken);
 
                     if (!readResultTask.IsCompletedSuccessfully)
                     {
                         readResult = await readResultTask;
-                        logger.TraceLog(connectionId, "async read");
+                        logger?.TraceLog(connectionId, "async read");
                     }
                     else
                     {
                         readResult = readResultTask.Result;
-                        logger.TraceLog(connectionId, "sync async read");
+                        logger?.TraceLog(connectionId, "sync async read");
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    logger.TraceLog(connectionId, "reader canceled");
+                    logger?.TraceLog(connectionId, "reader canceled");
 
                     if (pipeReader.TryRead(out readResult))
                     {
-                        logger.TraceLog(connectionId, "more data after cancellation");
+                        logger?.TraceLog(connectionId, "more data after cancellation");
 
                         buffer = readResult.Buffer;
 
@@ -228,12 +228,12 @@ namespace ThePlague.Networking.Tests
                 {
                     if (buffer.IsEmpty)
                     {
-                        logger.TraceLog(connectionId, "reader completed/canceled");
+                        logger?.TraceLog(connectionId, "reader completed/canceled");
                         break;
                     }
                     else
                     {
-                        logger.TraceLog(connectionId, "reader completed/canceled with buffer, continueing");
+                        logger?.TraceLog(connectionId, "reader completed/canceled with buffer, continueing");
                     }
                 }
             }
@@ -243,13 +243,16 @@ namespace ThePlague.Networking.Tests
 
         private static void ComputeBytesReceivedAndAppend
         (
+#pragma warning disable IDE0060 // Remove unused parameter
             string connectionId,
+
             int testSize,
             bool receiveContinuous,
             ref int bytesReceived,
             in ReadOnlySequence<byte> buffer,
             Memory<byte> received,
-            ILogger logger
+            ILogger? logger
+#pragma warning restore IDE0060 // Remove unused parameter
         )
         {
             int length;
@@ -346,7 +349,6 @@ namespace ThePlague.Networking.Tests
                             async (ConnectionContext ctx) =>
                             {
                                 PipeWriter writer = ctx.Transport.Output;
-                                ReadResult readResult;
 
                                 Memory<byte> buffer = writer.GetMemory(_ServerHello.Length * 2);
                                 MemoryMarshal.AsBytes<char>(_ServerHello).CopyTo(buffer.Span);
@@ -471,7 +473,6 @@ namespace ThePlague.Networking.Tests
                             async (ConnectionContext ctx) =>
                             {
                                 PipeWriter writer = ctx.Transport.Output;
-                                ReadResult readResult;
 
                                 Memory<byte> buffer = writer.GetMemory(_ClientHello.Length * 2);
                                 MemoryMarshal.AsBytes<char>(_ClientHello).CopyTo(buffer.Span);

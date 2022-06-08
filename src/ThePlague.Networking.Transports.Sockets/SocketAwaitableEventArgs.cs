@@ -13,8 +13,6 @@ using ThePlague.Networking.Connections;
 
 using Microsoft.Extensions.Logging;
 
-#nullable enable
-
 namespace ThePlague.Networking.Transports.Sockets
 {
     //based on 

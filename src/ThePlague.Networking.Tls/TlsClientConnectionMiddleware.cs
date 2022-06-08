@@ -37,24 +37,20 @@ namespace ThePlague.Networking.Tls
 
             try
             {
-                using (TlsPipe pipe = new TlsPipe
+                this._logger?.DebugLog(context.ConnectionId, "Activating TLS transport");
+                using (TlsPipe pipe = await TlsPipe.AuthenticateAsClientAsync
                 (
                     context.ConnectionId,
                     oldPipe.Input,
                     oldPipe.Output,
+                    this._sslOptions,
+                    this._sslOptions.Pool,
                     this._logger,
-                    this._sslOptions.Pool
+                    context.ConnectionClosed
                 ))
                 {
                     context.Features.Set<ITlsConnectionFeature>(pipe);
                     context.Features.Set<ITlsHandshakeFeature>(pipe);
-
-                    this._logger?.DebugLog(context.ConnectionId, "Activating TLS transport");
-                    await pipe.AuthenticateAsClientAsync
-                    (
-                        this._sslOptions,
-                        context.ConnectionClosed
-                    );
 
                     context.Transport = pipe;
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime;
 
 using System.IO.Pipelines;
 
@@ -45,7 +46,7 @@ namespace ThePlague.Networking.Tests
                     ),
                 UnixDomainSocketEndPoint
                     => serverBuilder.UseSocket(endpoint, createName),
-                NamedPipeEndPoint
+                NamedPipeEndPoint when OperatingSystem.IsWindows()
                     => serverBuilder.UseNamedPipe((NamedPipeEndPoint)endpoint, createName),
                 _
                     => throw new NotSupportedException()
@@ -84,7 +85,7 @@ namespace ThePlague.Networking.Tests
                     ),
                 UnixDomainSocketEndPoint
                     => clientBuilder.UseSocket(createName),
-                NamedPipeEndPoint
+                NamedPipeEndPoint when OperatingSystem.IsWindows()
                     => clientBuilder.UseNamedPipe(createName),
                 _
                     => throw new NotSupportedException()
