@@ -22,10 +22,6 @@
     </PackageReference>
   <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
   </ItemGroup>
-
-  <ItemGroup Condition="'$(RuntimeIdentifier)' == '' OR $([System.String]::Copy('$(RuntimeIdentifier)').ToLower().Contains('win'))">
-    <PackageReference Include="runtime.win.OpenSSL" Version="1.1.1-n" />
-  </ItemGroup>
   
   <ItemGroup>
     <ProjectReference Include="..\..\src\ThePlague.Networking.Transports.Sockets\ThePlague.Networking.Transports.Sockets.csproj" />

@@ -20,10 +20,6 @@
     <ProjectReference Include="..\..\src\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(RuntimeIdentifier)' == '' OR $([System.String]::Copy('$(RuntimeIdentifier)').ToLower().Contains('win'))">
-    <PackageReference Include="runtime.win.OpenSSL" Version="1.1.1-n" />
-  </ItemGroup>
-
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.13.1" />
     <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.13.1" />
