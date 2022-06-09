@@ -322,6 +322,98 @@ namespace ThePlague.Networking.Tests
 
         [Theory]
         [MemberData(nameof(GetEndPoints))]
+        public async Task Connect_And_Server_Close(EndPoint endpoint)
+        {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
+            Server server = this.ConfigureServer
+                (
+                    new ServerBuilder(this.ServiceProvider)
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"Connect_And_Server_Close_server_{serverClientIndex++}_{endpoint}"
+                    )
+                    .ConfigureMaxClients(1)
+                )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                .BuildServer();
+
+            await using (server)
+            {
+                await server.StartAsync();
+
+                Client client = await this.ConfigureClient
+                    (
+                        new ClientBuilder(this.ServiceProvider)
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"Connect_And_Server_Close_client_{clientIndex++}_{endpoint}"
+                        )
+                    )
+                    .ConfigureConnection((c) => ConfigureCloseListener(c))
+                    .BuildClient(endpoint);
+
+                await using (client)
+                {
+                    await client.RunAsync();
+                }
+
+                //ensure RunAsync ends, before calling shutdown in disposal
+                await server.RunAsync();
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Connect_And_Client_Close(EndPoint endpoint)
+        {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
+            Server server = this.ConfigureServer
+                (
+                    new ServerBuilder(this.ServiceProvider)
+                    .ConfigureEndpoint
+                    (
+                        endpoint,
+                        () => $"Connect_And_Client_Close_server_{serverClientIndex++}_{endpoint}"
+                    )
+                    .ConfigureMaxClients(1)
+                )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
+                .BuildServer();
+
+            await using (server)
+            {
+                await server.StartAsync();
+
+                Client client = await this.ConfigureClient
+                    (
+                        new ClientBuilder(this.ServiceProvider)
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"Connect_And_Client_Close_client_{clientIndex++}_{endpoint}"
+                        )
+                    )
+                    .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                    .BuildClient(endpoint);
+
+                await using (client)
+                {
+                    await client.RunAsync();
+                }
+
+                //ensure RunAsync ends, before calling shutdown in disposal
+                await server.RunAsync();
+            }
+        }
+
+        [Theory]
+        [MemberData(nameof(GetEndPoints))]
         public async Task Server_Data_Send_And_Server_Close(EndPoint endpoint)
         {
             byte[] result = new byte[_ServerHello.Length * 2];

@@ -5,6 +5,8 @@ using System.Text;
 using System.Threading.Tasks;
 
 using Microsoft.AspNetCore.Connections;
+using Microsoft.Extensions.Logging;
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Connections.Middleware
 {
@@ -21,13 +23,16 @@ namespace ThePlague.Networking.Connections.Middleware
             IMessageDispatcher<TMessage> messageDispatcher
         )
         {
+            ILogger? logger = connectionBuilder.ApplicationServices.CreateLogger<Protocol<TMessage>>();
+
             return connectionBuilder.Use
             (
                 next => new Protocol<TMessage>
                 (
                     messageReader,
                     messageWriter,
-                    messageDispatcher
+                    messageDispatcher,
+                    logger
                 ).OnConnectionAsync
             );
         }

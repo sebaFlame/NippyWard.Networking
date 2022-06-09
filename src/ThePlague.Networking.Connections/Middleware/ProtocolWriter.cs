@@ -3,31 +3,36 @@ using System.IO.Pipelines;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Microsoft.Extensions.Logging;
+
 namespace ThePlague.Networking.Connections.Middleware
 {
     public class ProtocolWriter<TMessage> : IProtocolWriter<TMessage>, IDisposable
     {
-        private readonly IDuplexPipe _pipe;
+        private readonly PipeWriter _pipeWriter;
         private readonly IMessageWriter<TMessage> _writer;
         private readonly SemaphoreSlim _semaphore;
+        private readonly ILogger? _logger;
         private bool _disposed;
 
         public ProtocolWriter
         (
-            IDuplexPipe pipe,
-            IMessageWriter<TMessage> writer
+            PipeWriter pipeWriter,
+            IMessageWriter<TMessage> writer,
+            ILogger? logger = null
         )
         {
-            this._pipe = pipe;
+            this._pipeWriter = pipeWriter;
             this._writer = writer;
+            this._logger = logger;
             this._semaphore = new SemaphoreSlim(1);
         }
 
         public void Complete(Exception? ex = null)
-            => this._pipe.Output.Complete(ex);
+            => this._pipeWriter.Complete(ex);
 
         public ValueTask CompleteAsync(Exception? ex = null)
-            => this._pipe.Output.CompleteAsync(ex);
+            => this._pipeWriter.CompleteAsync(ex);
 
         /// <summary>
         /// Writes a message to the transport using an <see cref="IMessageWriter{TMessage}"/>.
@@ -53,7 +58,7 @@ namespace ThePlague.Networking.Connections.Middleware
                 .WaitAsync(cancellationToken)
                 .ConfigureAwait(false);
 
-            PipeWriter pipeWriter = this._pipe.Output;
+            PipeWriter pipeWriter = this._pipeWriter;
             IMessageWriter<TMessage> writer = this._writer;
 
             try
@@ -103,6 +108,8 @@ namespace ThePlague.Networking.Connections.Middleware
             }
             catch
             { }
+
+            GC.SuppressFinalize(this);
         }
     }
 }

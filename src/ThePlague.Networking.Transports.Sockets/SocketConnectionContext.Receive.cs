@@ -277,7 +277,11 @@ namespace ThePlague.Networking.Transports.Sockets
             }
 
             this.TraceLog(error == null ? $"exiting with success ({this._totalBytesReceived} bytes received)" : $"exiting with failure ({this._totalBytesReceived} bytes received): {error.Message}");
-            //return error;
+
+            if (error is not null)
+            {
+                throw error;
+            }
         }
 
 #pragma warning disable RCS1231 // Make parameter ref read-only.

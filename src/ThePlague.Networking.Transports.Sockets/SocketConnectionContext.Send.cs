@@ -237,7 +237,11 @@ namespace ThePlague.Networking.Transports.Sockets
             }
 
             this.TraceLog(error == null ? $"exiting with success ({this._totalBytesSent} bytes sent)" : $"exiting with failure ({this._totalBytesSent} bytes sent): {error.Message}");
-            //return error;
+
+            if (error is not null)
+            {
+                throw error;
+            }
         }
 
         private static ValueTask<int> DoSend

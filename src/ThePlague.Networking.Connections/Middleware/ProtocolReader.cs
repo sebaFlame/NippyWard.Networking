@@ -2,33 +2,37 @@
 using System.Buffers;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
 
 using System.IO.Pipelines;
+using Microsoft.Extensions.Logging;
 
 namespace ThePlague.Networking.Connections.Middleware
 {
     public class ProtocolReader<TMessage> : IProtocolReader<TMessage>, IDisposable
     {
-        private readonly IDuplexPipe _pipe;
+        private readonly PipeReader _pipeReader;
         private readonly IMessageReader<TMessage> _reader;
+        private readonly ILogger? _logger;
 
         private bool _disposed;
 
         public ProtocolReader
         (
-            IDuplexPipe pipe,
-            IMessageReader<TMessage> reader
+            PipeReader pipeReader,
+            IMessageReader<TMessage> reader,
+            ILogger? logger = null
         )
         {
-            this._pipe = pipe;
+            this._pipeReader = pipeReader;
             this._reader = reader;
         }
 
         public void Complete(Exception? ex = null)
-            => this._pipe.Input.Complete(ex);
+            => this._pipeReader.Complete(ex);
 
         public ValueTask CompleteAsync(Exception? ex = null)
-            => this._pipe.Input.CompleteAsync(ex);
+            => this._pipeReader.CompleteAsync(ex);
 
         public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default)
         {
@@ -38,7 +42,7 @@ namespace ThePlague.Networking.Connections.Middleware
             }
 
             //always get the correct transport
-            PipeReader pipeReader = this._pipe.Input;
+            PipeReader pipeReader = this._pipeReader;
 
             while(pipeReader.TryRead(out ReadResult result))
             {
@@ -139,33 +143,42 @@ namespace ThePlague.Networking.Connections.Middleware
 
             if(isCanceled)
             {
-                readResult = default;
-                return true;
-            }
-
-            SequencePosition consumed = default, examined = default;
-            ReadOnlySequence<byte> buffer = result.Buffer;
-            TMessage message;
-
-            if(TryParseMessage
-            (
-                buffer,
-                reader,
-                ref consumed,
-                ref examined,
-                out message
-            ))
-            {
-                pipeReader.AdvanceTo(consumed, examined);
                 readResult = new ProtocolReadResult<TMessage>
                 (
-                    message,
-                    false,
-                    false
+                    default,
+                    isCanceled,
+                    isCompleted
                 );
+
                 return true;
             }
-            else
+
+            ReadOnlySequence<byte> buffer = result.Buffer;
+            SequencePosition consumed = buffer.Start, examined = buffer.Start;
+            TMessage? message;
+
+            try
+            {
+                if (TryParseMessage
+                (
+                    buffer,
+                    reader,
+                    out consumed,
+                    out examined,
+                    out message
+                ))
+                {
+                    readResult = new ProtocolReadResult<TMessage>
+                    (
+                        message,
+                        false,
+                        false
+                    );
+
+                    return true;
+                }
+            }
+            finally
             {
                 pipeReader.AdvanceTo(consumed, examined);
             }
@@ -178,6 +191,7 @@ namespace ThePlague.Networking.Connections.Middleware
                     isCanceled,
                     isCompleted
                 );
+
                 return true;
             }
 
@@ -189,21 +203,20 @@ namespace ThePlague.Networking.Connections.Middleware
         (
             in ReadOnlySequence<byte> buffer,
             IMessageReader<TMessage> reader,
-            ref SequencePosition consumed,
-            ref SequencePosition examined,
-            out TMessage message
+            out SequencePosition consumed,
+            out SequencePosition examined,
+            [NotNullWhen(true)] out TMessage? message
         )
             => reader.TryParseMessage
             (
                 buffer,
-                ref consumed,
-                ref examined,
+                out consumed,
+                out examined,
                 out message
             );
 
         public void Dispose()
         {
-            this.Complete(null);
             this._disposed = true;
             GC.SuppressFinalize(this);
         }

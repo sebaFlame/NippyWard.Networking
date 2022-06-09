@@ -177,7 +177,11 @@ namespace ThePlague.Networking.Transports.Pipes
             }
 
             this.TraceLog(error == null ? $"exiting with success ({this._totalBytesSent} bytes sent)" : $"exiting with failure ({this._totalBytesSent} bytes sent): {error.Message}");
-            //return error;
+
+            if (error is not null)
+            {
+                throw error;
+            }
         }
 
         //TODO: possible stack overflow

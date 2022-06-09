@@ -1,14 +1,17 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 
 using System.IO.Pipelines;
-using Microsoft.AspNetCore.Connections.Features;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Connections;
+
+using ThePlague.Networking.Logging;
 
 namespace ThePlague.Networking.Connections.Middleware
 {
-    public class Protocol<TMessage> : IConnectionProtocolFeature<TMessage>
+    public class Protocol<TMessage>
     {
         public IMessageReader<TMessage> Reader => this._messageReader;
         public IMessageWriter<TMessage> Writer => this._messageWriter;
@@ -17,17 +20,20 @@ namespace ThePlague.Networking.Connections.Middleware
         private readonly IMessageReader<TMessage> _messageReader;
         private readonly IMessageWriter<TMessage> _messageWriter;
         private readonly IMessageDispatcher<TMessage> _messageDispatcher;
+        private readonly ILogger? _logger;
 
         public Protocol
         (
             IMessageReader<TMessage> messageReader,
             IMessageWriter<TMessage> messageWriter,
-            IMessageDispatcher<TMessage> messageDispatcher
+            IMessageDispatcher<TMessage> messageDispatcher,
+            ILogger? logger = null
         )
         {
             this._messageReader = messageReader;
             this._messageWriter = messageWriter;
             this._messageDispatcher = messageDispatcher;
+            this._logger = logger;
         }
 
         //this should always be the terminal delegate and "block"
@@ -39,157 +45,229 @@ namespace ThePlague.Networking.Connections.Middleware
             ProtocolReader<TMessage> reader;
             ProtocolWriter<TMessage> writer;
             IDuplexPipe pipe = connectionContext.Transport;
-            CancellationTokenRegistration? regReader = null, regWriter = null;
-            CancellationTokenSource cts;
+            ValueTask dispatcherTask;
+            Exception? error = null;
 
             reader = new ProtocolReader<TMessage>
             (
-                pipe,
-                this._messageReader
+                pipe.Input,
+                this._messageReader,
+                this._logger
             );
 
             writer = new ProtocolWriter<TMessage>
             (
-                pipe,
-                this._messageWriter
+                pipe.Output,
+                this._messageWriter,
+                this._logger
             );
 
-            //register abort to reader/writer
-            IConnectionLifetimeFeature? connectionLifetimeFeature = connectionContext.Features.Get<IConnectionLifetimeFeature>();
-            if (connectionLifetimeFeature is not null)
-            {
-                regReader = connectionLifetimeFeature
-                    .ConnectionClosed
-                    .UnsafeRegister((r) => ((ProtocolReader<TMessage>?)r)!.Complete(new ConnectionAbortedException()), reader);
-
-                regWriter = connectionLifetimeFeature
-                    .ConnectionClosed
-                    .UnsafeRegister((w) => ((ProtocolWriter<TMessage>?)w)!.Complete(new ConnectionAbortedException()), writer);
-            }
-
-            //set correct connection features
-            connectionContext.Features.Set<IProtocolReader<TMessage>>(reader);
+            //set correct connection feature
             connectionContext.Features.Set<IProtocolWriter<TMessage>>(writer);
 
-            connectionContext.Features.Set<IConnectionProtocolFeature<TMessage>>(this);
-
-            IConnectionLifetimeNotificationFeature? connectionLifetimeNotificationFeature
-                = connectionContext.Features.Get<IConnectionLifetimeNotificationFeature>();
-
             CancellationToken cancellationToken = connectionContext.ConnectionClosed;
-            if(connectionLifetimeNotificationFeature is null)
-            {
-                cts = new CancellationTokenSource();
-
-                connectionContext.Features
-                    .Set<IConnectionLifetimeNotificationFeature>
-                (
-                    new ProtocolConnectionLifetime
-                    (
-                        reader,
-                        writer,
-                        cts
-                    )
-                );
-            }
-            else
-            {
-
-                cts = CancellationTokenSource.CreateLinkedTokenSource
-                (
-                    connectionLifetimeNotificationFeature.ConnectionClosedRequested,
-                    connectionContext.ConnectionClosed
-                );
-                cancellationToken = cts.Token;
-            }
 
             try
             {
-                await this._messageDispatcher.OnConnectedAsync(connectionContext);
+                this._logger?.TraceLog
+                (
+                    connectionContext.ConnectionId,
+                    "Protocol connected"
+                );
+
+                dispatcherTask = this._messageDispatcher.OnConnectedAsync
+                (
+                    connectionContext,
+                    cancellationToken
+                );
+
+                if(!dispatcherTask.IsCompleted)
+                {
+                    await dispatcherTask;
+                }
 
                 ValueTask<ProtocolReadResult<TMessage>> readResultTask;
                 ProtocolReadResult<TMessage> readResult;
 
                 while(true)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    this._logger?.TraceLog
+                    (
+                        connectionContext.ConnectionId,
+                        "protocol read initialized"
+                    );
+
+                    //if shutdown initiater -> await 0 byte read
+                    //else await new message
                     readResultTask = reader.ReadMessageAsync(cancellationToken);
 
-                    if(readResultTask.IsCompletedSuccessfully)
+                    if(readResultTask.IsCompleted)
                     {
                         readResult = readResultTask.Result;
+                        this._logger?.TraceLog
+                        (
+                            connectionContext.ConnectionId,
+                            "protocol sync read"
+                        );
                     }
                     else
                     {
                         readResult = await readResultTask;
+                        this._logger?.TraceLog
+                        (
+                            connectionContext.ConnectionId,
+                            "protocol async read"
+                        );
                     }
 
-                    if(readResult.IsCanceled
-                        || readResult.IsCompleted)
+                    //check what got canceled, can only happen when consumer
+                    //uses Transport (which is possible!).
+                    if(readResult.IsCanceled)
                     {
+                        this._logger?.TraceLog
+                        (
+                            connectionContext.ConnectionId,
+                            "protocol read cancelled"
+                        );
+
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        continue;
+                    }
+
+                    //will ony return IsCompleted when no more messages can
+                    //be parsed
+                    if(readResult.IsCompleted)
+                    {
+                        this._logger?.TraceLog
+                        (
+                            connectionContext.ConnectionId,
+                            "protocol read completed"
+                        );
                         break;
                     }
 
+                    //should not happen
                     if(readResult.Message is null)
                     {
                         continue;
                     }
 
-                    await this._messageDispatcher.DispatchMessageAsync
+                    this._logger?.TraceLog
+                    (
+                        connectionContext.ConnectionId,
+                        "protocol dispatching read message"
+                    );
+
+                    //message consumer - DANGER
+                    dispatcherTask = this._messageDispatcher.DispatchMessageAsync
                     (
                         connectionContext,
-                        readResult.Message
+                        readResult.Message,
+                        cancellationToken
                     );
+
+                    if (!dispatcherTask.IsCompleted)
+                    {
+                        await dispatcherTask;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
 
-                await this._messageDispatcher.OnDisconnectedAsync(connectionContext);
+                //DO NOT CALL NEXT
             }
             catch(Exception ex)
             {
-                reader.Complete(ex);
-                writer.Complete(ex);
+                this._logger?.TraceLog
+                (
+                    connectionContext.ConnectionId,
+                    $"protocal fail: {ex.Message}"
+                );
 
+                error = ex;
                 throw;
             }
             finally
             {
-                regReader?.Dispose();
-                regWriter?.Dispose();
+                Exception? writerEx = null, readerEx = null;
 
-                reader.Dispose();
-                writer.Dispose();
+                //ensure graceful shutdown
 
-                cts.Dispose();
-            }
-        }
+                try
+                {
+                    await writer.CompleteAsync(error);
+                }
+                catch(Exception e)
+                {
+                    this._logger?.TraceLog
+                    (
+                        connectionContext.ConnectionId,
+                        $"writer fail: {e.Message}"
+                    );
 
-        private class ProtocolConnectionLifetime : IConnectionLifetimeNotificationFeature
-        {
-            public CancellationToken ConnectionClosedRequested { get; set; }
+                    writerEx = e;
+                }
 
-            private readonly CancellationTokenSource _connectionClosedRequestedTokenSource;
-            private readonly ProtocolReader<TMessage> _reader;
-            private readonly ProtocolWriter<TMessage> _writer;
+                try
+                {
+                    await reader.CompleteAsync(error);
+                }
+                catch (Exception e)
+                {
+                    this._logger?.TraceLog
+                    (
+                        connectionContext.ConnectionId,
+                        $"reader fail: {e.Message}"
+                    );
 
-            public ProtocolConnectionLifetime
-            (
-                ProtocolReader<TMessage> reader,
-                ProtocolWriter<TMessage> writer,
-                CancellationTokenSource connectionClosedRequestedTokenSource
-            )
-            {
-                this._reader = reader;
-                this._writer = writer;
-                this._connectionClosedRequestedTokenSource = connectionClosedRequestedTokenSource;
-            }
+                    readerEx = e;
+                }
 
-            public void RequestClose()
-            {
-                //first fire callbacks
-                this._connectionClosedRequestedTokenSource.Cancel();
+                //pass execptions to consumer during disconnect
+                Exception?[] ex = new Exception?[]
+                {
+                    error,
+                    writerEx,
+                    readerEx
+                };
 
-                //then complete reader/writer, so the CancellationTokenSource can get disposed
-                this._reader.Complete();
-                this._writer.Complete();
+                if (ex.Any(static x => x is not null))
+                {
+                    error = new AggregateException
+                    (
+                        ex
+                            .Where(static x => x is not null)
+                            .Select(static y => y!)
+                    );
+                }
+
+                this._logger?.TraceLog
+                (
+                    connectionContext.ConnectionId,
+                    "Protocol disconnected"
+                );
+
+                try
+                {
+                    dispatcherTask = this._messageDispatcher.OnDisconnectedAsync
+                    (
+                        connectionContext,
+                        error
+                    );
+
+                    if (!dispatcherTask.IsCompleted)
+                    {
+                        await dispatcherTask;
+                    }
+                }
+                finally
+                {
+                    writer.Dispose();
+                    reader.Dispose();
+                }
             }
         }
     }
