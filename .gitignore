@@ -1,8 +1,0 @@
-.vs/
-.vscode/
-bin/
-obj/
-.nupkgs/
-BenchmarkDotNet.Artifacts/
-*.diagsession
-*.user
