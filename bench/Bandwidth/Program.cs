@@ -17,18 +17,18 @@ using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OpenSSL.Core.Keys;
-using OpenSSL.Core.ASN1;
-using OpenSSL.Core.X509;
-using OpenSSL.Core.SSL;
-using OpenSSL.Core;
+using NippyWard.OpenSSL.Keys;
+using NippyWard.OpenSSL.ASN1;
+using NippyWard.OpenSSL.X509;
+using NippyWard.OpenSSL.SSL;
+using NippyWard.OpenSSL;
 using Benchmark.LegacySsl;
 using Benchmark;
 
-using ThePlague.Networking.Logging;
-using ThePlague.Networking.Transports.Sockets;
-using ThePlague.Networking.Transports.Pipes;
-using ThePlague.Networking.Tls;
+using NippyWard.Networking.Logging;
+using NippyWard.Networking.Transports.Sockets;
+using NippyWard.Networking.Transports.Pipes;
+using NippyWard.Networking.Tls;
 using System.Security.Authentication;
 
 namespace Bandwidth
@@ -146,7 +146,7 @@ namespace Bandwidth
 
         protected static void InitializeCertificate
         (
-            out OpenSSL.Core.X509.X509Certificate openSslCertificate,
+            out NippyWard.OpenSSL.X509.X509Certificate openSslCertificate,
             out PrivateKey openSslKey,
             out X509Certificate2 certificate
         )
@@ -158,7 +158,7 @@ namespace Bandwidth
             openSslKey = new RSAKey(2048);
 
             //create certificate
-            openSslCertificate = new OpenSSL.Core.X509.X509Certificate
+            openSslCertificate = new NippyWard.OpenSSL.X509.X509Certificate
             (
                 openSslKey,
                 "localhost",
@@ -308,7 +308,7 @@ namespace Bandwidth
                 throw new InvalidOperationException("Server could not be created");
             }
 
-            OpenSSL.Core.X509.X509Certificate cert = null;
+            NippyWard.OpenSSL.X509.X509Certificate cert = null;
             PrivateKey key = null;
             X509Certificate2 legacyCert = null;
             SslProtocol protocol = SslProtocol.Tls12;

@@ -9,9 +9,9 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
-using ThePlague.Networking.Connections;
+using NippyWard.Networking.Connections;
 using Benchmark.LegacySsl;
-using ThePlague.Networking.Logging;
+using NippyWard.Networking.Logging;
 
 namespace Benchmark
 {

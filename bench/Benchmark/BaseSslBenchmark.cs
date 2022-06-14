@@ -22,14 +22,14 @@ using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
 using Microsoft.Extensions.DependencyInjection;
 
-using OpenSSL.Core;
-using OpenSSL.Core.Keys;
-using OpenSSL.Core.SSL;
-using OpenSSL.Core.SSL.Buffer;
-using OpenSSL.Core.ASN1;
-using ThePlague.Networking.Connections;
-using ThePlague.Networking.Transports.Sockets;
-using ThePlague.Networking.Tls;
+using NippyWard.OpenSSL;
+using NippyWard.OpenSSL.Keys;
+using NippyWard.OpenSSL.SSL;
+using NippyWard.OpenSSL.SSL.Buffer;
+using NippyWard.OpenSSL.ASN1;
+using NippyWard.Networking.Connections;
+using NippyWard.Networking.Transports.Sockets;
+using NippyWard.Networking.Tls;
 using Benchmark.LegacySsl;
 
 namespace Benchmark
@@ -46,7 +46,7 @@ namespace Benchmark
 
         protected static void InitializeCertificate
         (
-            out OpenSSL.Core.X509.X509Certificate openSslCertificate,
+            out NippyWard.OpenSSL.X509.X509Certificate openSslCertificate,
             out PrivateKey openSslKey,
             out X509Certificate2 certificate
         )
@@ -58,7 +58,7 @@ namespace Benchmark
             openSslKey = new RSAKey(2048);
 
             //create certificate
-            openSslCertificate = new OpenSSL.Core.X509.X509Certificate
+            openSslCertificate = new NippyWard.OpenSSL.X509.X509Certificate
             (
                 openSslKey,
                 "localhost",
@@ -151,7 +151,7 @@ namespace Benchmark
         (
             IServiceProvider serviceProvider,
             PrivateKey openSslKey,
-            OpenSSL.Core.X509.X509Certificate openSslCertificate,
+            NippyWard.OpenSSL.X509.X509Certificate openSslCertificate,
             SslProtocol tlsProtocol,
             bool awaitTask = false
         )

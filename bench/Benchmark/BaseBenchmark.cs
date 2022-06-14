@@ -22,14 +22,14 @@ using System.IO.Pipelines;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-using OpenSSL.Core;
-using OpenSSL.Core.Keys;
-using OpenSSL.Core.SSL;
-using OpenSSL.Core.SSL.Buffer;
-using OpenSSL.Core.ASN1;
-using ThePlague.Networking.Logging;
-using ThePlague.Networking.Transports.Sockets;
-using ThePlague.Networking.Tls;
+using NippyWard.OpenSSL;
+using NippyWard.OpenSSL.Keys;
+using NippyWard.OpenSSL.SSL;
+using NippyWard.OpenSSL.SSL.Buffer;
+using NippyWard.OpenSSL.ASN1;
+using NippyWard.Networking.Logging;
+using NippyWard.Networking.Transports.Sockets;
+using NippyWard.Networking.Tls;
 using Benchmark.LegacySsl;
 using System.Text;
 

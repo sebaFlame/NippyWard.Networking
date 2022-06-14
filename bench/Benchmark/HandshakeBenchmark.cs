@@ -5,13 +5,13 @@ using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Microsoft.AspNetCore.Connections;
 
-using OpenSSL.Core.Keys;
+using NippyWard.OpenSSL.Keys;
 
 namespace Benchmark
 {
     public class HandshakeBenchmark : BaseSslBenchmark
     {
-        private OpenSSL.Core.X509.X509Certificate? _openSslCertificate;
+        private NippyWard.OpenSSL.X509.X509Certificate? _openSslCertificate;
         private PrivateKey? _openSslKey;
         private X509Certificate2? _certificate;
         private ConnectionContext? _openSslServer, _legacySslServer, _openSslClient,_legacySslClient;

@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  
+  <ItemGroup>
+      <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NippyWard.Networking.Transports\NippyWard.Networking.Transports.csproj" />
+    <ProjectReference Include="..\NippyWard.Networking.Logging\NippyWard.Networking.Logging.csproj" />
+  </ItemGroup>
+</Project>

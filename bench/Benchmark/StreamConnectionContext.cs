@@ -4,8 +4,8 @@ using System.Linq;
 using System.IO;
 using System.Threading.Tasks;
 
-using ThePlague.Networking.Connections;
-using ThePlague.Networking.Pipelines;
+using NippyWard.Networking.Connections;
+using NippyWard.Networking.Pipelines;
 
 using System.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;

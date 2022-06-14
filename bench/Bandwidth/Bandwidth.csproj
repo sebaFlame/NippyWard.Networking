@@ -9,10 +9,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\ThePlague.Networking.Transports.Sockets\ThePlague.Networking.Transports.Sockets.csproj" />
-    <ProjectReference Include="..\..\src\ThePlague.Networking.Transports.Pipes\ThePlague.Networking.Transports.Pipes.csproj" />
-    <ProjectReference Include="..\..\src\ThePlague.Networking.Logging\ThePlague.Networking.Logging.csproj" />
-    <ProjectReference Include="..\..\src\ThePlague.Networking.Tls\ThePlague.Networking.Tls.csproj" />
+    <ProjectReference Include="..\..\src\NippyWard.Networking.Transports.Sockets\NippyWard.Networking.Transports.Sockets.csproj" />
+    <ProjectReference Include="..\..\src\NippyWard.Networking.Transports.Pipes\NippyWard.Networking.Transports.Pipes.csproj" />
+    <ProjectReference Include="..\..\src\NippyWard.Networking.Logging\NippyWard.Networking.Logging.csproj" />
+    <ProjectReference Include="..\..\src\NippyWard.Networking.Tls\NippyWard.Networking.Tls.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,7 +9,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 
-using ThePlague.Networking.Pipelines;
+using NippyWard.Networking.Pipelines;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;

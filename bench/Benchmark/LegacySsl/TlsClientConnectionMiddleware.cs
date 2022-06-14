@@ -10,7 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 
-using ThePlague.Networking.Pipelines;
+using NippyWard.Networking.Pipelines;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;

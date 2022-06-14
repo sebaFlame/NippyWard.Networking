@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Microsoft.AspNetCore.Connections;
 
-using OpenSSL.Core.Keys;
+using NippyWard.OpenSSL.Keys;
 
 namespace Benchmark
 {
@@ -14,7 +14,7 @@ namespace Benchmark
         [Params(1024, 4096, 16384)]
         public int BufferSize { get; set; }
 
-        private OpenSSL.Core.X509.X509Certificate? _openSslCertificate;
+        private NippyWard.OpenSSL.X509.X509Certificate? _openSslCertificate;
         private PrivateKey? _openSslKey;
         private X509Certificate2? _certificate;
         private ConnectionContext? _socketServer, _socketClient;
