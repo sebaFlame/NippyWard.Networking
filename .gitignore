@@ -6,7 +6,6 @@
 
 .vscode/
 .vs/
-deps/
 .vimspector.json
 raw.log
 

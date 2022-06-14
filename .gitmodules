@@ -1,0 +1,4 @@
+[submodule "OpenSSL.Core"]
+	path = deps/OpenSSL.Core
+	url = ..\\openssl-net
+	branch = pipelines
