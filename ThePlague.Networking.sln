@@ -19,9 +19,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ThePlague.Networking.Transp
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deps", "deps", "{96608C6F-F7AC-4264-B6EB-39E0849EBCBD}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenSSL.Core", "deps\OpenSSL.Core\OpenSSL.Core.csproj", "{546918AB-00E8-4922-B257-B72F29338124}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenSSL.Core", "deps\OpenSSL.Core\src\OpenSSL.Core\OpenSSL.Core.csproj", "{546918AB-00E8-4922-B257-B72F29338124}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenSSL.Core.Generator", "deps\OpenSSL.Core.Generator\OpenSSL.Core.Generator.csproj", "{28BF35D7-2152-4DAE-A865-7D6EC0042233}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OpenSSL.Core.Generator", "deps\OpenSSL.Core\src\OpenSSL.Core.Generator\OpenSSL.Core.Generator.csproj", "{28BF35D7-2152-4DAE-A865-7D6EC0042233}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{CDF968B1-9651-4987-9199-CABF5299A22A}"
 EndProject
