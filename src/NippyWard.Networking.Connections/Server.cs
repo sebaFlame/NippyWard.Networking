@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Net;
+using System.Diagnostics.CodeAnalysis;
 
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
@@ -37,6 +38,7 @@ namespace NippyWard.Networking.Connections
         private readonly ConnectionDelegate _connectionDelegate;
         private readonly ILogger? _logger;
         private readonly ConcurrentDictionary<ulong, Task> _connections;
+        private readonly IDictionary<EndPoint, IConnectionListener> _servers;
 
         public Server
         (
@@ -52,6 +54,7 @@ namespace NippyWard.Networking.Connections
             this._cts = new CancellationTokenSource();
             this.ServerShutdown = this._cts.Token;
             this._connections = new ConcurrentDictionary<ulong, Task>();
+            this._servers = new Dictionary<EndPoint, IConnectionListener>();
         }
 
         ~Server()
@@ -75,6 +78,46 @@ namespace NippyWard.Networking.Connections
         }
 
         /// <summary>
+        /// Bind the server to all configured <see cref="IConnectionListenerFactory"/>
+        /// This should only be called if you're unsure what the server will
+        /// bind to, e.g. when using a proxy. This way you can call
+        /// <see cref="TryGetConnectionListener(EndPoint, out IConnectionListener?)"/>
+        /// to figure out what <see cref="EndPoint"/> it bound to (
+        /// <see cref="IConnectionListener.EndPoint"/>).
+        /// </summary>
+        /// <param name="cancellationToken">To cancel the binding process</param>
+        /// <returns>The binding Task</returns>
+        public async Task BindAsync(CancellationToken cancellationToken = default)
+        {
+            IConnectionListenerFactory connectionListenerFactory;
+            IConnectionListener connectionListener;
+
+            foreach (KeyValuePair<EndPoint, IConnectionListenerFactory> kv in this._serverContext.Bindings)
+            {
+                if(this._servers.ContainsKey(kv.Key))
+                {
+                    continue;
+                }
+
+                connectionListenerFactory = kv.Value;
+
+                try
+                {
+                    connectionListener = await connectionListenerFactory.BindAsync(kv.Key, cancellationToken);
+                    this._servers.Add(kv.Key, connectionListener);
+                }
+                catch(Exception ex)
+                {
+                    this._logger?.LogError(ex, "[Server] Exception during binding");
+
+                    this.Shutdown();
+
+                    throw;
+                }
+            }
+        }
+
+        /// <summary>
         /// Start the server and return the execution.
         /// If the server has alrady started through <see cref="StartAsync(CancellationToken)"/>,
         /// one can await completion here.
@@ -91,22 +134,19 @@ namespace NippyWard.Networking.Connections
                 return;
             }
 
-            IConnectionListenerFactory connectionListenerFactory;
-            IConnectionListener connectionListener;
-
             Task[] listenTasks = new Task[this._serverContext.Bindings.Count];
             byte index = 0;
 
-            foreach (KeyValuePair<EndPoint, IConnectionListenerFactory> kv in this._serverContext.Bindings)
-            {
-                connectionListenerFactory = kv.Value;
-                connectionListener = await connectionListenerFactory.BindAsync(kv.Key, cancellationToken);
+            //can throw exceptions
+            await this.BindAsync(cancellationToken);
 
+            foreach (KeyValuePair<EndPoint, IConnectionListener> kv in this._servers)
+            {
                 listenTasks[index] = this.ListenConnectionsAsync
                 (
                     index,
                     this._serverContext.MaxClients,
-                    connectionListener,
+                    kv.Value,
                     this._connections,
                     cancellationToken
                 );
@@ -133,6 +173,18 @@ namespace NippyWard.Networking.Connections
             this.Shutdown(this._serverContext.TimeOut);
 
             await this._listenTask;
+        }
+
+        public bool TryGetConnectionListener(EndPoint endpoint, [NotNullWhen(true)] out IConnectionListener? connectionListener)
+        {
+            if(!this._servers.ContainsKey(endpoint))
+            {
+                connectionListener = null;
+                return false;
+            }
+
+            connectionListener = this._servers[endpoint];
+            return true;
         }
 
         //max 256 listeners!!!
