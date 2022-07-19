@@ -250,7 +250,8 @@ namespace NippyWard.Networking.Connections
 
                 //only single connection, await it
                 this._logger?.TraceLog("Server", "awaiting single connection");
-                await this.Connections;
+
+                await Task.WhenAll(connections.Values);
             }
             catch (OperationCanceledException ex)
             {

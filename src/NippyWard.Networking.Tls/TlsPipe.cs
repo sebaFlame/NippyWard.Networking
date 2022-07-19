@@ -20,7 +20,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace NippyWard.Networking.Tls
 {
-    internal partial class TlsPipe : ITlsConnectionFeature, ITlsHandshakeFeature, IDuplexPipe, IDisposable, IAsyncDisposable
+    public partial class TlsPipe : ITlsConnectionFeature, ITlsHandshakeFeature, IDuplexPipe, IDisposable, IAsyncDisposable
     {
         #region IDuplexPipe
         public PipeReader Input => this.TlsPipeReader;
@@ -1081,7 +1081,9 @@ namespace NippyWard.Networking.Tls
                 }
             }
 
-            throw new NotSupportedException($"{nameof(ShutdownDuringReadAsync)} should never return");
+            //TODO: disable TLS
+            return default;
+            //throw new NotSupportedException($"{nameof(ShutdownDuringReadAsync)} should never return");
         }
 
         //throws an excpetion on success!
@@ -1093,15 +1095,15 @@ namespace NippyWard.Networking.Tls
             {
                 this.TraceLog("shutdown during shutdown completed");
 
-                try
-                {
-                    ThrowTlsShutdown();
-                }
-                finally
-                {
+                //try
+                //{
+                //    ThrowTlsShutdown();
+                //}
+                //finally
+                //{
                     this._shutdownWaiter?.SetResult(true);
                     this._shutdownWaiter = null;
-                }
+                //}
             }
 
             return succes;

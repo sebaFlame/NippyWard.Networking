@@ -16,7 +16,7 @@ using NippyWard.OpenSSL.Keys;
 
 namespace NippyWard.Networking.Tls
 {
-    internal partial class TlsPipe
+    public partial class TlsPipe
     {
         private static async Task<TlsPipe> Authenticate
         (
@@ -150,6 +150,7 @@ namespace NippyWard.Networking.Tls
                 innerWriter: innerWriter,
                 pool: pool,
                 logger: logger,
+                clientCertificateCallbackHandler: null,
                 cancellationToken: cancellationToken
            );
 
@@ -168,12 +169,13 @@ namespace NippyWard.Networking.Tls
         )
             => AuthenticateAsClientAsync
             (
-                connectionId,
-                innerReader,
-                innerWriter,
+                connectionId: connectionId,
+                innerReader: innerReader,
+                innerWriter: innerWriter,
                 sslStrength: sslStrength,
                 pool: pool,
                 logger: logger,
+                clientCertificateCallbackHandler: null,
                 cancellationToken: cancellationToken
            );
 

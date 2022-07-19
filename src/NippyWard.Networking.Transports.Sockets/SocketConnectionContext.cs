@@ -19,7 +19,9 @@ using NippyWard.Networking.Logging;
 namespace NippyWard.Networking.Transports.Sockets
 {
     //TODO: bandwidth throttling (with feature)
-    public sealed partial class SocketConnectionContext : TransportConnectionContext
+    public sealed partial class SocketConnectionContext
+        : TransportConnectionContext,
+            ISocketFeature
     {
         /// <summary>
         /// When possible, determines how the pipe first reached a close state
@@ -96,6 +98,8 @@ namespace NippyWard.Networking.Transports.Sockets
                 sendToSocket.Writer,
                 this
             );
+
+            this.Features.Set<ISocketFeature>(this);
         }
 
         private bool TrySetShutdown(PipeShutdownKind kind)
@@ -299,38 +303,6 @@ namespace NippyWard.Networking.Transports.Sockets
             //not fatal
             catch
             { }
-
-            //initialize keep alive
-            if(socket.ProtocolType == ProtocolType.Tcp)
-            {
-                socket.SetSocketOption
-                (
-                    SocketOptionLevel.Socket,
-                    SocketOptionName.KeepAlive,
-                    true
-                );
-
-                socket.SetSocketOption
-                (
-                    SocketOptionLevel.Tcp,
-                    SocketOptionName.TcpKeepAliveTime,
-                    10
-                );
-
-                socket.SetSocketOption
-                (
-                    SocketOptionLevel.Tcp,
-                    SocketOptionName.TcpKeepAliveInterval,
-                    5
-                );
-
-                socket.SetSocketOption
-                (
-                    SocketOptionLevel.Tcp,
-                    SocketOptionName.TcpKeepAliveRetryCount,
-                    3
-                );
-            }
         }
 
         /// <summary>
