@@ -68,23 +68,26 @@ namespace NippyWard.Networking.Tests
                 [NotNullWhen(true)] out string? message
             )
             {
-                consumed = input.Start;
-                examined = input.End;
-
                 if(input.IsEmpty)
                 {
                     this._logger.TraceLog("HelloReader", "empty");
+
+                    consumed = input.Start;
+                    examined = input.Start;
 
                     message = null;
                     return false;
                 }
 
-                this._position = input.GetOffset(examined);
+                this._position = input.GetOffset(input.End);
 
                 //verify with buffer length as "parsing"
                 if (this._position < _HelloBuffer.Length)
                 {
                     this._logger.TraceLog("HelloReader", "incomplete");
+
+                    consumed = input.Start;
+                    examined = input.End;
 
                     message = null;
                     return false;
@@ -92,11 +95,14 @@ namespace NippyWard.Networking.Tests
 
                 this._logger.TraceLog("HelloReader", "complete");
 
-                consumed = input.End;
                 byte[] b = input.ToArray();
                 ReadOnlySpan<char> c = MemoryMarshal.Cast<byte, char>(b);
 
                 message = new string(c);
+
+                consumed = input.End;
+                examined = input.End;
+
                 return true;
             }
         }

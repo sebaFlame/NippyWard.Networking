@@ -14,7 +14,7 @@ namespace NippyWard.Networking.Connections.Middleware
         /// </summary>
         /// <param name="input">The buffer to parse</param>
         /// <param name="consumed">The byte length of the parsed <paramref name="message"/></param>
-        /// <param name="examined">Set to the end of <paramref name="input"/> to allow correct buffering</param>
+        /// <param name="examined">The byte length of the examined <paramref name="input"/> buffer so far</param>
         /// <param name="message">The parsed message</param>
         /// <returns>true when parsing succeeded, false when it did not succeed</returns>
         bool TryParseMessage

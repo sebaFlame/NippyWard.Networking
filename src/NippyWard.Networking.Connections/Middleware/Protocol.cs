@@ -47,10 +47,11 @@ namespace NippyWard.Networking.Connections.Middleware
             IDuplexPipe pipe = connectionContext.Transport;
             ValueTask dispatcherTask;
             Exception? error = null;
+            PipeReader pipeReader = pipe.Input;
 
             reader = new ProtocolReader<TMessage>
             (
-                pipe.Input,
+                pipeReader,
                 this._messageReader,
                 this._logger
             );
@@ -124,7 +125,7 @@ namespace NippyWard.Networking.Connections.Middleware
 
                     //check what got canceled, can only happen when consumer
                     //uses Transport (which is possible!).
-                    if(readResult.IsCanceled)
+                    if (readResult.IsCanceled)
                     {
                         this._logger?.TraceLog
                         (
@@ -132,28 +133,27 @@ namespace NippyWard.Networking.Connections.Middleware
                             "protocol read cancelled"
                         );
 
-                        cancellationToken.ThrowIfCancellationRequested();
-
                         continue;
                     }
 
-                    //will ony return IsCompleted when no more messages can
-                    //be parsed
-                    if(readResult.IsCompleted)
+                    if (readResult.Message is null)
                     {
-                        this._logger?.TraceLog
-                        (
-                            connectionContext.ConnectionId,
-                            "protocol read completed"
-                        );
-                        break;
-                    }
+                        if (readResult.IsCompleted)
+                        {
+                            this._logger?.TraceLog
+                            (
+                                connectionContext.ConnectionId,
+                                "protocol read completed"
+                            );
 
-                    //should not happen
-                    if(readResult.Message is null)
-                    {
+                            break;
+                        }
+
+                        //should not happen
                         continue;
                     }
+
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     this._logger?.TraceLog
                     (
@@ -174,7 +174,20 @@ namespace NippyWard.Networking.Connections.Middleware
                         await dispatcherTask;
                     }
 
-                    cancellationToken.ThrowIfCancellationRequested();
+                    //message has been consumed, buffer can be thrown away
+                    if (readResult.IsCompleted)
+                    {
+                        this._logger?.TraceLog
+                        (
+                            connectionContext.ConnectionId,
+                            "protocol read completed"
+                        );
+
+                        break;
+                    }
+
+                    //mark message as consumed and free buffers
+                    pipeReader.AdvanceTo(readResult.Consumed, readResult.Examined);
                 }
 
                 //DO NOT CALL NEXT

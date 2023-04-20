@@ -34,7 +34,10 @@ namespace NippyWard.Networking.Connections.Middleware
         public ValueTask CompleteAsync(Exception? ex = null)
             => this._pipeReader.CompleteAsync(ex);
 
-        public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default)
+        public ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync
+        (
+            CancellationToken cancellationToken = default
+        )
         {
             if(this._disposed)
             {
@@ -138,58 +141,66 @@ namespace NippyWard.Networking.Connections.Middleware
             out ProtocolReadResult<TMessage> readResult
         )
         {
+            ReadOnlySequence<byte> buffer = result.Buffer;
             bool isCompleted = result.IsCompleted;
             bool isCanceled = result.IsCanceled;
 
-            if(isCanceled)
+            TMessage? message;
+
+            if (isCanceled)
             {
                 readResult = new ProtocolReadResult<TMessage>
                 (
                     default,
                     isCanceled,
-                    isCompleted
+                    isCompleted,
+                    buffer.Start,
+                    buffer.Start
                 );
 
                 return true;
             }
 
-            ReadOnlySequence<byte> buffer = result.Buffer;
-            SequencePosition consumed = buffer.Start, examined = buffer.Start;
-            TMessage? message;
-
-            try
+            if (buffer.Length > 0)
             {
                 if (TryParseMessage
                 (
                     buffer,
                     reader,
-                    out consumed,
-                    out examined,
+                    out SequencePosition consumed,
+                    out SequencePosition examined,
                     out message
                 ))
                 {
                     readResult = new ProtocolReadResult<TMessage>
                     (
                         message,
-                        false,
-                        false
+                        isCanceled,
+                        isCompleted,
+                        consumed,
+                        examined
                     );
 
                     return true;
                 }
-            }
-            finally
-            {
-                pipeReader.AdvanceTo(consumed, examined);
+                else
+                {
+                    //no message found, ensure more data becomes available
+                    //to retry parsing a message
+                    pipeReader.AdvanceTo(consumed, examined);
+                }
             }
 
-            if(isCompleted)
+            //ensure completion/cancellation gets passed
+            if (isCompleted)
             {
                 readResult = new ProtocolReadResult<TMessage>
                 (
                     default,
                     isCanceled,
-                    isCompleted
+                    isCompleted,
+                    buffer.Start,
+                    buffer.Start
                 );
 
                 return true;

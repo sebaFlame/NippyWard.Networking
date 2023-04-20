@@ -1095,15 +1095,15 @@ namespace NippyWard.Networking.Tls
             {
                 this.TraceLog("shutdown during shutdown completed");
 
-                //try
-                //{
-                //    ThrowTlsShutdown();
-                //}
-                //finally
-                //{
+                try
+                {
+                    ThrowTlsShutdown();
+                }
+                finally
+                {
                     this._shutdownWaiter?.SetResult(true);
                     this._shutdownWaiter = null;
-                //}
+                }
             }
 
             return succes;
