@@ -1,0 +1,57 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <!-- All project references -->
+  <ItemGroup>
+    <ProjectReference Include="..\NippyWard.Networking.Connections\NippyWard.Networking.Connections.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Logging\NippyWard.Networking.Logging.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Pipelines\NippyWard.Networking.Pipelines.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Tls\NippyWard.Networking.Tls.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Transports.Pipes\NippyWard.Networking.Transports.Pipes.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Transports.Proxy\NippyWard.Networking.Transports.Proxy.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Transports.Sockets\NippyWard.Networking.Transports.Sockets.csproj" PrivateAssets="all"/>
+    <ProjectReference Include="..\NippyWard.Networking.Transports\NippyWard.Networking.Transports.csproj" PrivateAssets="all"/>
+  </ItemGroup>
+
+  <!-- All external references -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="6.0.0" />
+    <PackageReference Include="NippyWard.OpenSSL" Version="1.0.0" />
+  </ItemGroup>
+
+  <!-- Include project references build ouput into package -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="BuildOnlySettings;ResolveReferences">
+    <ItemGroup>
+      <_ReferenceCopyLocalPaths Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('PrivateAssets', 'All'))"/>
+    </ItemGroup>
+
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(_ReferenceCopyLocalPaths)" TargetPath="%(_ReferenceCopyLocalPaths.DestinationSubDirectory)"/>
+    </ItemGroup>
+  </Target>
+
+  <!-- Remove built dll from package - https://stackoverflow.com/a/53663559 -->
+  <PropertyGroup>
+    <GenerateNuspecDependsOn>RemoveBuiltOutput</GenerateNuspecDependsOn>
+  </PropertyGroup>
+  
+  <Target Name="RemoveBuiltOutput" Returns="@(NuGetPackInput);@(_BuildOutputInPackage);@(_TargetPathsToSymbols)">
+    <ItemGroup>
+      <NuGetPackInput Remove="@(BuiltProjectOutputGroupKeyOutput);@(DebugSymbolsProjectOutputGroupOutput)"/>
+      <_BuildOutputInPackage Remove="@(BuiltProjectOutputGroupKeyOutput)"/>
+      <_TargetPathsToSymbols Remove="@(DebugSymbolsProjectOutputGroupOutput)"/>
+    </ItemGroup>
+  </Target>
+  
+</Project>

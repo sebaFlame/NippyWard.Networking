@@ -1,4 +1,0 @@
-[submodule "NippyWard.OpenSSL"]
-	path = deps/NippyWard.OpenSSL
-	url = ..\\NippyWard.OpenSSL
-	branch = pipelines

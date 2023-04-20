@@ -10,10 +10,10 @@
 
   <ItemGroup>
     <PackageReference Include="System.IO.Pipelines" Version="6.0.1" />
+    <PackageReference Include="NippyWard.OpenSSL" Version="1.0.0" />
   </ItemGroup>
   
   <ItemGroup>
-    <ProjectReference Include="..\..\deps\NippyWard.OpenSSL\src\NippyWard.OpenSSL\NippyWard.OpenSSL.csproj" />
     <ProjectReference Include="..\NippyWard.Networking.Pipelines\NippyWard.Networking.Pipelines.csproj" />
     <ProjectReference Include="..\NippyWard.Networking.Connections\NippyWard.Networking.Connections.csproj" />
     <ProjectReference Include="..\NippyWard.Networking.Logging\NippyWard.Networking.Logging.csproj" />
