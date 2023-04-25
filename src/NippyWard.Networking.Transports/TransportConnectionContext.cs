@@ -175,7 +175,7 @@ namespace NippyWard.Networking.Transports
                 totalBytesReceived - this._previousTotalBytesReceived
             );
             //should be only thread writing here
-            this._previousTotalBytesReceived = totalBytesSent;
+            this._previousTotalBytesReceived = totalBytesReceived;
         }
 
         public override void Abort(ConnectionAbortedException abortReason)

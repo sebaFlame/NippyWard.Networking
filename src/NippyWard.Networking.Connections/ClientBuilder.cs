@@ -84,6 +84,10 @@ namespace NippyWard.Networking.Connections
             => this.BuildClientFactory()
                 .ConnectAsync(endPoint, cancellationToken);
 
+        public Task<Client> BuildClient(EndPoint endPoint, CancellationToken cancellationToken = default, params KeyValuePair<object, object?>[] items)
+            => this.BuildClientFactory()
+                .ConnectAsync(endPoint, cancellationToken, items);
+
         /// <summary>
         /// This is a task representing a single connected <see cref="Client"/> and executing
         /// the <see cref="ConnectionDelegate"/> configured using <see cref="ConfigureConnection(Func{IConnectionBuilder, IConnectionBuilder})"/>
@@ -95,5 +99,9 @@ namespace NippyWard.Networking.Connections
         public Task Build(EndPoint endPoint, CancellationToken shutdownCancellationToken = default)
             => this.BuildClientFactory()
                 .RunClientAsync(endPoint, shutdownCancellationToken);
+
+        public Task Build(EndPoint endPoint, CancellationToken shutdownCancellationToken = default, params KeyValuePair<object, object?>[] items)
+            => this.BuildClientFactory()
+                .RunClientAsync(endPoint, shutdownCancellationToken, items);
     }
 }

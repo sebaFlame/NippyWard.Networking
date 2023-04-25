@@ -17,7 +17,7 @@ namespace NippyWard.Networking.Connections
         private ClientContext _clientContext;
         private ILogger? _logger;
 
-        public ClientFactory 
+        public ClientFactory
         (
             ConnectionDelegate connectionDelegate,
             ClientContext clientContext,
@@ -51,6 +51,18 @@ namespace NippyWard.Networking.Connections
             return new Client(connectionContext, this._connectionDelegate, this._logger);
         }
 
+        public async Task<Client> ConnectAsync(EndPoint endPoint, CancellationToken cancellationToken = default, params KeyValuePair<object, object?>[] items)
+        {
+            ConnectionContext connectionContext = await this.CreateConnectionContext(endPoint, cancellationToken);
+
+            foreach (KeyValuePair<object, object?> kv in items)
+            {
+                connectionContext.Items.Add(kv);
+            }
+
+            return new Client(connectionContext, this._connectionDelegate, this._logger);
+        }
+
         /// <summary>
         /// This is a task representing a single connected <see cref="Client"/> processing execution.
         /// </summary>
@@ -60,6 +72,12 @@ namespace NippyWard.Networking.Connections
         public async Task RunClientAsync(EndPoint endPoint, CancellationToken cancellationToken = default)
         {
             Client client = await this.ConnectAsync(endPoint, cancellationToken);
+            await client.RunAsync(cancellationToken);
+        }
+
+        public async Task RunClientAsync(EndPoint endPoint, CancellationToken cancellationToken = default, params KeyValuePair<object, object?>[] items)
+        {
+            Client client = await this.ConnectAsync(endPoint, cancellationToken, items);
             await client.RunAsync(cancellationToken);
         }
     }
