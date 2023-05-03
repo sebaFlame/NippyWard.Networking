@@ -50,6 +50,7 @@ namespace NippyWard.Networking.Logging
                     : $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}"
             );
 
+        [Conditional("TRACELOG")]
         private static void TraceLog
         (
             this ILogger logger,
@@ -58,9 +59,7 @@ namespace NippyWard.Networking.Logging
             string caller
         )
         {
-#if TRACELOG
             logger.LogTrace($"[{Thread.CurrentThread.ManagedThreadId.ToString()}, {identifier}, {caller}] {message}");
-#endif
         }
 
         [Conditional("DEBUG")]
