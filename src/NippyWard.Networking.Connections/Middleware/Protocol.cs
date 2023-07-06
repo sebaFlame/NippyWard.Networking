@@ -64,9 +64,9 @@ namespace NippyWard.Networking.Connections.Middleware
             );
 
             //set correct connection feature
-            connectionContext.Features.Set<IProtocolWriter<TMessage>>(writer);
+      ionontext.Features.Set<IProtocolWriter<TMessage>>(writer);
 
-            CancellationToken cancellationToken = connectionContext.ConnectionClosed;
+            CancellationToke nectionContext.ConnectionClosed;
 
             try
             {
@@ -192,12 +192,19 @@ namespace NippyWard.Networking.Connections.Middleware
 
                 //DO NOT CALL NEXT
             }
+            catch(OperationCanceledException ex)
+            {
+                if(ex.CancellationToken != cancellationToken)
+                {
+                    throw;
+                }
+            }
             catch(Exception ex)
             {
                 this._logger?.TraceLog
                 (
                     connectionContext.ConnectionId,
-                    $"protocal fail: {ex.Message}"
+                    $"protocol fail: {ex.Message}"
                 );
 
                 error = ex;

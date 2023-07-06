@@ -74,18 +74,11 @@ namespace NippyWard.Networking.Connections
             }
 
             //register Cancellation, Client could be executed as a delegate
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext?)c!), this._connectionContext);
+            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister(c => ConnectionContextShutdown((ConnectionContext)c!), this._connectionContext);
 
             try
             {
                 await this._connectionDelegate(this._connectionContext);
-            }
-            catch(OperationCanceledException ex)
-            {
-                if(ex.CancellationToken != cancellationToken)
-                {
-                    throw;
-                }
             }
             catch(Exception ex)
             {
