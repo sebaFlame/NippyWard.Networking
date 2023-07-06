@@ -64,9 +64,9 @@ namespace NippyWard.Networking.Connections.Middleware
             );
 
             //set correct connection feature
-      ionontext.Features.Set<IProtocolWriter<TMessage>>(writer);
+            connectionContext.Features.Set<IProtocolWriter<TMessage>>(writer);
 
-            CancellationToke nectionContext.ConnectionClosed;
+            CancellationToken cancellationToken = connectionContext.ConnectionClosed;
 
             try
             {
