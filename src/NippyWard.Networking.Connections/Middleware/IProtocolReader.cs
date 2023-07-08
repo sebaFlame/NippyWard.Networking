@@ -14,5 +14,7 @@ namespace NippyWard.Networking.Connections.Middleware
         ValueTask CompleteAsync(Exception? exception = null);
 
         ValueTask<ProtocolReadResult<TMessage>> ReadMessageAsync(CancellationToken cancellationToken = default);
+
+        void AdvanceTo(SequencePosition consumed, SequencePosition examined);
     }
 }

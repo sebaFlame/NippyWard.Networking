@@ -186,12 +186,14 @@ namespace NippyWard.Networking.Connections.Middleware
                         break;
                     }
 
-                    //mark message as consumed and free buffers
-                    pipeReader.AdvanceTo(readResult.Consumed, readResult.Examined);
+                    //mark message as consumed and free buffers AFTER the
+                    //message has been dispatched
+                    reader.AdvanceTo(readResult.Consumed, readResult.Examined);
                 }
 
                 //DO NOT CALL NEXT
             }
+            //ignore this cancelation because it was caused by ConnectionClosed
             catch(OperationCanceledException ex)
             {
                 if(ex.CancellationToken != cancellationToken)
