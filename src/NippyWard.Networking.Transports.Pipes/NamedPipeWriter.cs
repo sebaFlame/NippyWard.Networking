@@ -32,18 +32,18 @@ namespace NippyWard.Networking.Transports.Pipes
 
         public override async ValueTask CompleteAsync(Exception? exception = null)
         {
+            this._connection.OutputWriterCompleted();
+
+            //could dispose stream
+            //does a flush
+            await this._writer.CompleteAsync(exception);
+
             try
             {
-                this._connection.OutputWriterCompleted();
-
-                //could dispose stream
-                //does a flush
-                await this._writer.CompleteAsync(exception);
+                await this._connection.AwaitSendTask();
             }
             catch
             { }
-
-            await this._connection.AwaitSendTask();
         }
 
         //public override async ValueTask<FlushResult> FlushAsync

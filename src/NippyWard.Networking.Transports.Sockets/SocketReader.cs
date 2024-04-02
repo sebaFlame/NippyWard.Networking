@@ -32,17 +32,17 @@ namespace NippyWard.Networking.Transports.Sockets
 
         public override async ValueTask CompleteAsync(Exception? exception = null)
         {
+            this._connection.InputReaderCompleted(exception);
+            await this._reader.CompleteAsync(exception);
+
             try
             {
-                this._connection.InputReaderCompleted(exception);
-                await this._reader.CompleteAsync(exception);
+                //await the receive thread
+                //use a task, so it can be awaited on multiple times
+                await this._connection.AwaitReceiveTask();
             }
             catch
             { }
-
-            //await the send thread
-            //use a task, so it can be awaited on multiple times
-            await this._connection.AwaitReceiveTask();
         }
     }
 }
