@@ -21,7 +21,7 @@ namespace NippyWard.Networking.Logging
 
         public ILogger CreateLogger(string categoryName)
         {
-            return new FileLogger(this._logWriter);
+            return new FileLogger(categoryName, this._logWriter);
         }
 
         public void Dispose()

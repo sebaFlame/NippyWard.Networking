@@ -163,16 +163,16 @@ namespace NippyWard.Networking.Connections
         /// </summary>
         /// <param name="cancellationToken">Not used</param>
         /// <returns>The finishing execution</returns>
-        public async Task StopAsync(CancellationToken cancellationToken = default)
+        public Task StopAsync(CancellationToken cancellationToken = default)
         {
             if(this._listenTask is null)
             {
-                throw new NullReferenceException($"Server has not been started with {nameof(StartAsync)}");
+                return Task.CompletedTask;
             }
 
             this.Shutdown(this._serverContext.TimeOut);
 
-            await this._listenTask;
+            return this._listenTask;
         }
 
         public bool TryGetConnectionListener(EndPoint endpoint, [NotNullWhen(true)] out IConnectionListener? connectionListener)

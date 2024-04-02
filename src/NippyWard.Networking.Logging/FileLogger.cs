@@ -13,9 +13,11 @@ namespace NippyWard.Networking.Logging
     public class FileLogger : ILogger, IDisposable
     {
         private readonly LogWriter _logWriter;
+        private readonly string _categoryName;
 
-        public FileLogger(LogWriter logWriter)
+        public FileLogger(string categoryName, LogWriter logWriter)
         {
+            this._categoryName = categoryName;
             this._logWriter = logWriter;
         }
 
@@ -29,7 +31,7 @@ namespace NippyWard.Networking.Logging
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
-            this._logWriter.WriteLine($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} {state}{(exception != null ? "\n" : string.Empty)}{exception}");
+            this._logWriter.WriteLine($"{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} {this._categoryName} {state}{(exception != null ? "\n" : string.Empty)}{exception}");
         }
 
         public void Dispose()
