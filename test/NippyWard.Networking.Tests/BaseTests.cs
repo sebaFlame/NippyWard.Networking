@@ -76,8 +76,8 @@ namespace NippyWard.Networking.Tests
         internal static UnixDomainSocketEndPoint CreateUnixDomainSocketEndPoint()
             => new UnixDomainSocketEndPoint(GetUnixDomainSocketName(Interlocked.Increment(ref _SocketIndex)));
 
-        internal static NamedPipeEndPoint CreateNamedPipeEndPoint()
-            => new NamedPipeEndPoint(GetNamedPipeName(Interlocked.Increment(ref _PipeIndex)));
+        internal static Transports.Pipes.NamedPipeEndPoint CreateNamedPipeEndPoint()
+            => new Transports.Pipes.NamedPipeEndPoint(GetNamedPipeName(Interlocked.Increment(ref _PipeIndex)));
 
         private static int GetAvailablePort()
         {
