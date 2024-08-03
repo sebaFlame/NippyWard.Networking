@@ -107,8 +107,8 @@ namespace Bandwidth
         internal static UnixDomainSocketEndPoint CreateUnixDomainSocketEndPoint()
             => new UnixDomainSocketEndPoint(GetUnixDomainSocketName(Interlocked.Increment(ref _SocketIndex)));
 
-        internal static NamedPipeEndPoint CreateNamedPipeEndPoint()
-            => new NamedPipeEndPoint(GetNamedPipeName(Interlocked.Increment(ref _PipeIndex)));
+        internal static NippyWard.Networking.Transports.Pipes.NamedPipeEndPoint CreateNamedPipeEndPoint()
+            => new NippyWard.Networking.Transports.Pipes.NamedPipeEndPoint(GetNamedPipeName(Interlocked.Increment(ref _PipeIndex)));
 
         private static int GetAvailablePort()
         {
