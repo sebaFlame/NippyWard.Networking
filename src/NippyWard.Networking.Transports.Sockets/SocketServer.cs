@@ -141,7 +141,7 @@ namespace NippyWard.Networking.Transports.Sockets
             CancellationToken cancellationToken = default(CancellationToken)
         )
         {
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((s) => ((SocketServer?)s!).Stop(), this);
+            CancellationTokenRegistration reg = cancellationToken.Register((s) => ((SocketServer?)s!).Stop(), this);
 
             try
             {

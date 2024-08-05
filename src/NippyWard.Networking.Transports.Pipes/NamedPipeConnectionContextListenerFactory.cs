@@ -64,7 +64,7 @@ namespace NippyWard.Networking.Transports.Pipes
                 receivePipeOptions: this._receiveOptions
             );
 
-            return ValueTask.FromResult<IConnectionListener>(server);
+            return new ValueTask<IConnectionListener>(server);
         }
     }
 }

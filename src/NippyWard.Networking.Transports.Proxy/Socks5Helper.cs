@@ -55,23 +55,23 @@ namespace NippyWard.Networking.Transports.Proxy
             }
             else
             {
-                IPAddress[] addresses;
+                IEnumerable<IPAddress> addresses;
 
                 try
                 {
-                    addresses = await Dns.GetHostAddressesAsync
+                    addresses = (await Dns.GetHostAddressesAsync
                     (
-                        host,
-                        AddressFamily.InterNetwork
+                        host
                     )
-                    .ConfigureAwait(false);
+                    .ConfigureAwait(false))
+                    .Where(x => x.AddressFamily == AddressFamily.InterNetwork);
                 }
                 catch (Exception ex)
                 {
                     throw new ProxyException("No IPv4 address found");
                 }
 
-                proxyEndpoint = new IPEndPoint(addresses[0], port);
+                proxyEndpoint = new IPEndPoint(addresses.First(), port);
             }
 
             return proxyEndpoint;

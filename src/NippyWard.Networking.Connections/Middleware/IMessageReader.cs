@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace NippyWard.Networking.Connections.Middleware
 {
     public interface IMessageReader<TMessage>
+        where TMessage : class
     {
         /// <summary>
         /// Parse a single message from <paramref name="input"/> and return it.

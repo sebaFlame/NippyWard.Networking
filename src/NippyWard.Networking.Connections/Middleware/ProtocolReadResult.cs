@@ -3,6 +3,7 @@
 namespace NippyWard.Networking.Connections.Middleware
 {
     public readonly struct ProtocolReadResult<TMessage>
+        where TMessage : class
     {
         public ProtocolReadResult
         (

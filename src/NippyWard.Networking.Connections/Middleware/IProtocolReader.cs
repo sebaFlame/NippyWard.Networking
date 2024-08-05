@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 namespace NippyWard.Networking.Connections.Middleware
 {
     public interface IProtocolReader<TMessage>
+        where TMessage : class
     {
         void Complete(Exception? ex = null);
 

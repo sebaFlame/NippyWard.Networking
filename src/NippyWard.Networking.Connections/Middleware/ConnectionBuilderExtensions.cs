@@ -22,6 +22,7 @@ namespace NippyWard.Networking.Connections.Middleware
             IMessageWriter<TMessage> messageWriter,
             IMessageDispatcher<TMessage> messageDispatcher
         )
+            where TMessage : class
         {
             ILogger? logger = connectionBuilder.ApplicationServices.CreateLogger<Protocol<TMessage>>();
 

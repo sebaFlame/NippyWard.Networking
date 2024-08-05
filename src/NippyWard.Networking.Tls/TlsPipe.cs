@@ -491,8 +491,8 @@ namespace NippyWard.Networking.Tls
             cancellationToken.ThrowIfCancellationRequested();
 
             //use a Task based one as there could be multiple awaiters
-            TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            CancellationTokenRegistration reg = cancellationToken.UnsafeRegister((tcs) => ((TaskCompletionSource?)tcs!).SetCanceled(), tcs);
+            TaskCompletionSource<int> tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationTokenRegistration reg = cancellationToken.Register((tcs) => ((TaskCompletionSource<int>?)tcs!).SetCanceled(), tcs);
 
             //do a zero length write
             try
@@ -537,7 +537,7 @@ namespace NippyWard.Networking.Tls
                     ThrowPipeCompleted();
                 }
 
-                tcs.SetResult();
+                tcs.SetResult(0);
             }
             catch (Exception ex)
             {
@@ -555,7 +555,7 @@ namespace NippyWard.Networking.Tls
         private async ValueTask<T> AwaitWriteDuringOperation<T>
         (
             ValueTask<FlushResult> flushTask,
-            TaskCompletionSource tcs,
+            TaskCompletionSource<int> tcs,
             CancellationTokenRegistration reg,
             bool bufferRead,
             Func<FlushResult, bool ,CancellationToken, ValueTask<T>> postWriteFunction,
@@ -576,7 +576,7 @@ namespace NippyWard.Networking.Tls
                     ThrowPipeCompleted();
                 }
 
-                tcs.SetResult();
+                tcs.SetResult(0);
             }
             catch (Exception ex)
             {
@@ -1058,10 +1058,10 @@ namespace NippyWard.Networking.Tls
                 if (sslState.WantsWrite())
                 {
                     //keep these scoped
-                    TaskCompletionSource tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    TaskCompletionSource<int> tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
                     ValueTask<ReadResult> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
                     {
-                        tcs.SetResult();
+                        tcs.SetResult(0);
                         return default;
                     }
 

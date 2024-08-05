@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 using NippyWard.Networking.Connections;
 using NippyWard.Networking.Logging;
+using System.Runtime.InteropServices;
 
 namespace NippyWard.Networking.Transports.Sockets
 {
@@ -89,7 +90,7 @@ namespace NippyWard.Networking.Transports.Sockets
             //weird behavoir using UnixDomainSocketEndPoint in Windows
             //sometimes can not do graceful shutdown
             if (endpoint is UnixDomainSocketEndPoint
-                && !OperatingSystem.IsLinux())
+                && !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             {
                 throw new NotSupportedException($"{nameof(UnixDomainSocketEndPoint)} not supported on {Environment.OSVersion}");
             }

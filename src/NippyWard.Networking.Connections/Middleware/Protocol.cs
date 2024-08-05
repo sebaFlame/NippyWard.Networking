@@ -12,6 +12,7 @@ using NippyWard.Networking.Logging;
 namespace NippyWard.Networking.Connections.Middleware
 {
     public class Protocol<TMessage>
+        where TMessage : class
     {
         public IMessageReader<TMessage> Reader => this._messageReader;
         public IMessageWriter<TMessage> Writer => this._messageWriter;

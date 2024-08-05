@@ -12,6 +12,7 @@ using NippyWard.Networking.Logging;
 namespace NippyWard.Networking.Connections.Middleware
 {
     public class ProtocolReader<TMessage> : IProtocolReader<TMessage>, IDisposable
+        where TMessage : class
     {
         private readonly PipeReader _pipeReader;
         private readonly IMessageReader<TMessage> _reader;
@@ -79,7 +80,7 @@ namespace NippyWard.Networking.Connections.Middleware
                 out protocolReadResult
             ))
             {
-                return ValueTask.FromResult(protocolReadResult);
+                return new ValueTask<ProtocolReadResult<TMessage>>(protocolReadResult);
             }
 
             //no message has been found, continue reading from pipereader
@@ -107,7 +108,7 @@ namespace NippyWard.Networking.Connections.Middleware
                     out protocolReadResult
                 ))
                 {
-                    return ValueTask.FromResult(protocolReadResult);
+                    return new ValueTask<ProtocolReadResult<TMessage>>(protocolReadResult);
                 }
             }
 
@@ -148,7 +149,7 @@ namespace NippyWard.Networking.Connections.Middleware
                     out ProtocolReadResult<TMessage> protocolReadResult
                 ))
                 {
-                    return ValueTask.FromResult(protocolReadResult);
+                    return new ValueTask<ProtocolReadResult<TMessage>>(protocolReadResult);
                 }
             }
         }

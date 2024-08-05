@@ -229,8 +229,8 @@ namespace NippyWard.Networking.Transports
                 //this ensures all code gets executed on a thread and NOT in this method
                 //so when an inline scheduler gets used, this method does not block
                 //indefinitely
-                ThreadPool.UnsafeQueueUserWorkItem(_DoSendTaskWrapper, sendWrapper, false);
-                ThreadPool.UnsafeQueueUserWorkItem(_DoReceiveTaskWrapper, receiveWrapper, false);
+                ThreadPool.QueueUserWorkItem(_DoSendTaskWrapper, sendWrapper, false);
+                ThreadPool.QueueUserWorkItem(_DoReceiveTaskWrapper, receiveWrapper, false);
 
                 sendWrapper.WaitHandle.WaitOne();
                 receiveWrapper.WaitHandle.WaitOne();

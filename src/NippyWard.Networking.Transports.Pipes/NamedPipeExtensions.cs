@@ -35,15 +35,12 @@ namespace NippyWard.Networking.Transports.Pipes
                 .AddBinding<NamedPipeEndPoint>(connectionFactory);
         }
 
-        [SupportedOSPlatform("windows")]
         public static ClientBuilder UseNamedPipe(this ClientBuilder clientBuilder)
             => UseClientNamedPipe(clientBuilder);
 
-        [SupportedOSPlatform("windows")]
         public static ClientBuilder UseNamedPipe(this ClientBuilder clientBuilder, Func<string> createName)
             => UseClientNamedPipe(clientBuilder, createName: createName);
 
-        [SupportedOSPlatform("windows")]
         public static ClientBuilder UseNamedPipe
         (
             this ClientBuilder clientBuilder,
@@ -76,15 +73,12 @@ namespace NippyWard.Networking.Transports.Pipes
                 .AddBinding(endpoint, connectionListenerFactory);
         }
 
-        [SupportedOSPlatform("windows")]
         public static ServerBuilder UseNamedPipe(this ServerBuilder serverBuilder, NamedPipeEndPoint endpoint)
             => UseServerNamedPipe(serverBuilder, endpoint);
 
-        [SupportedOSPlatform("windows")]
         public static ServerBuilder UseNamedPipe(this ServerBuilder serverBuilder, NamedPipeEndPoint endpoint, Func<string> createName)
             => UseServerNamedPipe(serverBuilder, endpoint, createName: createName);
 
-        [SupportedOSPlatform("windows")]
         public static ServerBuilder UseNamedPipe
         (
             this ServerBuilder serverBuilder,

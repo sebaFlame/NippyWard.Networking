@@ -84,7 +84,7 @@ namespace NippyWard.Networking.Transports.Sockets
         /// </summary>
         /// <param name="ioScheduler"></param>
         public SocketAwaitableEventArgs(PipeScheduler ioScheduler, ILogger? logger)
-            : base(unsafeSuppressExecutionContextFlow: true)
+            : base()
         {
             this._ioScheduler = ioScheduler;
             this._logger = logger;
@@ -197,7 +197,7 @@ namespace NippyWard.Networking.Transports.Sockets
             {
                 this.UserToken = null;
 
-                ThreadPool.UnsafeQueueUserWorkItem(continuation, state, preferLocal: true);
+                ThreadPool.QueueUserWorkItem(continuation, state, preferLocal: true);
             }
         }
 
@@ -320,7 +320,7 @@ namespace NippyWard.Networking.Transports.Sockets
 
             return error == SocketError.Success ?
                 new ValueTask<Socket>(acceptSocket) :
-                ValueTask.FromException<Socket>(CreateException(error));
+                throw CreateException(error);
         }
 
         public ValueTask<int> ReceiveAsync(Socket socket, CancellationToken cancellationToken = default)
@@ -341,7 +341,7 @@ namespace NippyWard.Networking.Transports.Sockets
 
             return error == SocketError.Success ?
                 new ValueTask<int>(bytesTransferred) :
-                ValueTask.FromException<int>(CreateException(error));
+                throw CreateException(error);
         }
 
         public ValueTask<int> SendAsync(Socket socket, CancellationToken cancellationToken = default)
@@ -362,14 +362,14 @@ namespace NippyWard.Networking.Transports.Sockets
 
             return error == SocketError.Success ?
                 new ValueTask<int>(bytesTransferred) :
-                ValueTask.FromException<int>(CreateException(error));
+                throw CreateException(error);
         }
 
         public ValueTask ConnectAsync(Socket socket, CancellationToken cancellationToken = default)
         {
             Debug.Assert(Volatile.Read(ref _continuation) == null, "Expected null continuation to indicate reserved for use");
 
-            this._cancellationTokenRegistration = cancellationToken.UnsafeRegister((e) => Socket.CancelConnectAsync((SocketAsyncEventArgs)e!), this);
+            this._cancellationTokenRegistration = cancellationToken.Register((e) => Socket.CancelConnectAsync((SocketAsyncEventArgs)e!), this);
 
             try
             {
@@ -395,7 +395,7 @@ namespace NippyWard.Networking.Transports.Sockets
 
             return error == SocketError.Success ?
                 default :
-                ValueTask.FromException(CreateException(error));
+                throw CreateException(error);
         }
         #endregion
 

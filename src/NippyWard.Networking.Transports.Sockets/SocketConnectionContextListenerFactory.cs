@@ -57,7 +57,7 @@ namespace NippyWard.Networking.Transports.Sockets
                 this._receiveOptions
             );
 
-            return ValueTask.FromResult<IConnectionListener>(server);
+            return new ValueTask<IConnectionListener>(server);
         }
     }
 }
