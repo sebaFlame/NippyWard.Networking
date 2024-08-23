@@ -18,6 +18,8 @@ using Xunit.Abstractions;
 using NippyWard.Networking.Connections;
 using NippyWard.Networking.Transports.Sockets;
 using NippyWard.Networking.Logging;
+using Microsoft.AspNetCore.Connections.Features;
+using NippyWard.Networking.Tls;
 
 namespace NippyWard.Networking.Tests
 {
@@ -107,12 +109,12 @@ namespace NippyWard.Networking.Tests
                             .CopyTo(sent.Slice(bytesSent));
                     }
 
-                    bytesSent += concreteLength;
-
                     logger?.TraceLog(connectionId, $"flushing {concreteLength} of {index}");
 
                     logger?.TraceLog(connectionId, "flush initiated");
                     flushResultTask = writer.FlushAsync(cancellationToken);
+
+                    bytesSent += concreteLength;
 
                     if (!flushResultTask.IsCompletedSuccessfully)
                     {
@@ -226,15 +228,8 @@ namespace NippyWard.Networking.Tests
                 if (readResult.IsCompleted
                     || readResult.IsCanceled)
                 {
-                    if (buffer.IsEmpty)
-                    {
-                        logger?.TraceLog(connectionId, "reader completed/canceled");
-                        break;
-                    }
-                    else
-                    {
-                        logger?.TraceLog(connectionId, "reader completed/canceled with buffer, continueing");
-                    }
+                    logger?.TraceLog(connectionId, "reader completed/canceled");
+                    break;
                 }
             }
 
@@ -326,18 +321,35 @@ namespace NippyWard.Networking.Tests
         {
             int serverClientIndex = 0;
             int clientIndex = 0;
+            TaskCompletionSource client_connected = new TaskCompletionSource();
+            TaskCompletionSource server_connected = new TaskCompletionSource();
 
             Server server = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"Connect_And_Server_Close_server_{serverClientIndex++}_{endpoint}"
-                    )
-                    .ConfigureMaxClients(1)
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"Connect_And_Server_Close_server_{serverClientIndex++}_{endpoint}"
+                        )
+                        .ConfigureMaxClients(1)
                 )
-                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                await client_connected.Task;
+                                server_connected.SetResult();
+
+                                await next(ctx);
+                            }
+                        )
+                )
                 .BuildServer();
 
             await using (server)
@@ -347,13 +359,28 @@ namespace NippyWard.Networking.Tests
                 Client client = await this.ConfigureClient
                     (
                         new ClientBuilder(this.ServiceProvider)
-                        .ConfigureEndpoint
-                        (
-                            endpoint,
-                            () => $"Connect_And_Server_Close_client_{clientIndex++}_{endpoint}"
-                        )
+                            .ConfigureConnection((c) => ConfigureCloseListener(c))
+                            .ConfigureEndpoint
+                            (
+                                endpoint,
+                                () => $"Connect_And_Server_Close_client_{clientIndex++}_{endpoint}"
+                            )
                     )
-                    .ConfigureConnection((c) => ConfigureCloseListener(c))
+                    .ConfigureConnection
+                    (
+                        (c) =>
+                            c.Use
+                            (
+                                next =>
+                                async (ConnectionContext ctx) =>
+                                {
+                                    client_connected.SetResult();
+                                    await server_connected.Task;
+
+                                    await next(ctx);
+                                }
+                            )
+                    )
                     .BuildClient(endpoint);
 
                 await using (client)
@@ -372,18 +399,35 @@ namespace NippyWard.Networking.Tests
         {
             int serverClientIndex = 0;
             int clientIndex = 0;
+            TaskCompletionSource client_connected = new TaskCompletionSource();
+            TaskCompletionSource server_connected = new TaskCompletionSource();
 
             Server server = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"Connect_And_Client_Close_server_{serverClientIndex++}_{endpoint}"
-                    )
-                    .ConfigureMaxClients(1)
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"Connect_And_Client_Close_server_{serverClientIndex++}_{endpoint}"
+                        )
+                        .ConfigureMaxClients(1)
                 )
-                .ConfigureConnection((c) => ConfigureCloseListener(c))
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                await client_connected.Task;
+                                server_connected.SetResult();
+
+                                await next(ctx);
+                            }
+                        )
+                )
                 .BuildServer();
 
             await using (server)
@@ -393,13 +437,28 @@ namespace NippyWard.Networking.Tests
                 Client client = await this.ConfigureClient
                     (
                         new ClientBuilder(this.ServiceProvider)
-                        .ConfigureEndpoint
-                        (
-                            endpoint,
-                            () => $"Connect_And_Client_Close_client_{clientIndex++}_{endpoint}"
-                        )
+                            .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                            .ConfigureEndpoint
+                            (
+                                endpoint,
+                                () => $"Connect_And_Client_Close_client_{clientIndex++}_{endpoint}"
+                            )
                     )
-                    .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                    .ConfigureConnection
+                    (
+                        (c) =>
+                            c.Use
+                            (
+                                next =>
+                                async (ConnectionContext ctx) =>
+                                {
+                                    client_connected.SetResult();
+                                    await server_connected.Task;
+
+                                    await next(ctx);
+                                }
+                            )
+                    )
                     .BuildClient(endpoint);
 
                 await using (client)
@@ -426,11 +485,12 @@ namespace NippyWard.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Server_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Server_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -453,17 +513,17 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Server_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Server_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -489,7 +549,6 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -515,6 +574,7 @@ namespace NippyWard.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
                         .ConfigureEndpoint
                         (
                             endpoint,
@@ -544,17 +604,17 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Client_Data_Send_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Client_Data_Send_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -577,7 +637,6 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -605,11 +664,12 @@ namespace NippyWard.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -633,17 +693,17 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .BuildSingleClient();
 
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Server_Random_Data_Send_And_Server_Close_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -666,7 +726,6 @@ namespace NippyWard.Networking.Tests
                             }
                         )
                 )
-                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .Build(endpoint);
 
             await Task.WhenAll(serverTask, clientTask);
@@ -684,7 +743,6 @@ namespace NippyWard.Networking.Tests
             int bytesSent = 0, bytesReceived = 0;
             byte[] sent = new byte[testSize];
             byte[] received = new byte[testSize];
-            Task<int> clientSender;
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -694,11 +752,12 @@ namespace NippyWard.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_server_{serverClientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -708,8 +767,6 @@ namespace NippyWard.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
-                                ReadResult readResult;
-                                ReadOnlySequence<byte> buffer;
                                 PipeReader reader = ctx.Transport.Input;
 
                                 bytesReceived = await RandomDataReceiver
@@ -722,30 +779,6 @@ namespace NippyWard.Networking.Tests
                                     false
                                 );
 
-                                //notify client to close by completing sender (which is doing nothing)
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //wait on close confirmation from client
-                                //and ignore rest of data
-                                while(true)
-                                {
-                                    //ignore rest of data
-                                    readResult = await reader.ReadAsync();
-                                    buffer = readResult.Buffer;
-                                    reader.AdvanceTo(buffer.End);
-
-                                    if(readResult.IsCompleted
-                                        && buffer.IsEmpty)
-                                    {
-                                        break;
-                                    }
-                                }
-
-                                Assert.True(readResult.IsCompleted);
-
-                                //done reading
-                                await reader.CompleteAsync();
-
                                 await next(ctx);
                             }
                         )
@@ -755,11 +788,12 @@ namespace NippyWard.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Client_Random_Data_Read_And_Client_Close_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -769,35 +803,15 @@ namespace NippyWard.Networking.Tests
                             next =>
                             async (ConnectionContext ctx) =>
                             {
-                                ReadResult readResult = default;
-
-                                CancellationTokenSource cts = new CancellationTokenSource();
-
-                                clientSender = RandomDataSender
+                                bytesSent = await RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
                                     maxBufferSize,
                                     testSize,
                                     sent,
-                                    this._logger,
-                                    true,
-                                    cts.Token
+                                    this._logger
                                 );
-
-                                //wait until server sender sends shutdown
-                                readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                //complete sender
-                                cts.Cancel();
-                                bytesSent = await clientSender;
-                                await ctx.Transport.Output.CompleteAsync();
-                                cts.Dispose();
-
-                                //due to close receievd from server through ReadAsync
-                                await ctx.Transport.Input.CompleteAsync();
 
                                 await next(ctx);
                             }
@@ -825,7 +839,7 @@ namespace NippyWard.Networking.Tests
             byte[] clientSent = new byte[testSize];
             byte[] clientReceived = new byte[testSize];
 
-            Task<int> clientSender, serverReceiver, clientReceiver;
+            Task<int> clientSender, serverSender, serverReceiver, clientReceiver;
 
             int serverClientIndex = 0;
             int clientIndex = 0;
@@ -835,11 +849,12 @@ namespace NippyWard.Networking.Tests
             Task serverTask = this.ConfigureServer
                 (
                     new ServerBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Duplex_Random_Data_server_{serverClientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Duplex_Random_Data_server_{serverClientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -856,10 +871,10 @@ namespace NippyWard.Networking.Tests
                                     testSize,
                                     serverReceived,
                                     this._logger,
-                                    true
+                                    false
                                 );
 
-                                serverBytesSent = await RandomDataSender
+                                serverSender = RandomDataSender
                                 (
                                     ctx.ConnectionId,
                                     ctx.Transport.Output,
@@ -870,24 +885,10 @@ namespace NippyWard.Networking.Tests
                                     false
                                 );
 
-                                //initiate close from server, this should end
-                                //client read thread
-                                await ctx.Transport.Output.CompleteAsync();
+                                await Task.WhenAll(serverReceiver, serverSender);
 
-                                try
-                                {
-                                    //server receiver will end through client close
-                                    serverBytesReceived = await serverReceiver;
-
-                                    //verify close
-                                    ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                    Assert.True(readResult.IsCompleted);
-                                    Assert.Equal(0, readResult.Buffer.Length);
-                                }
-                                finally
-                                {
-                                    await ctx.Transport.Input.CompleteAsync();
-                                }
+                                serverBytesReceived = serverReceiver.Result;
+                                serverBytesSent = serverSender.Result;
 
                                 await next(ctx);
                             }
@@ -898,11 +899,12 @@ namespace NippyWard.Networking.Tests
             Task clientTask = this.ConfigureClient
                 (
                     new ClientBuilder(this.ServiceProvider)
-                    .ConfigureEndpoint
-                    (
-                        endpoint,
-                        () => $"{namePrefix}_Duplex_Random_Data_client_{clientIndex++}_{nameSuffix}"
-                    )
+                        .ConfigureConnection((c) => ConfigureCloseListener(c))
+                        .ConfigureEndpoint
+                        (
+                            endpoint,
+                            () => $"{namePrefix}_Duplex_Random_Data_client_{clientIndex++}_{nameSuffix}"
+                        )
                 )
                 .ConfigureConnection
                 (
@@ -939,16 +941,6 @@ namespace NippyWard.Networking.Tests
 
                                 clientBytesReceived = clientReceiver.Result;
                                 clientBytesSent = clientSender.Result;
-
-                                //acknowledge close to server
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //verify close
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                await ctx.Transport.Input.CompleteAsync();
 
                                 await next(ctx);
                             }

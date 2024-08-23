@@ -126,33 +126,38 @@ namespace NippyWard.Networking.Tests
                 {
                     try
                     {
-                        //initialize read, or it might complete before you start
-                        //reading
-                        ValueTask<ReadResult> readTask = ctx.Transport.Input.ReadAsync();
-
-                        //close connection
-                        await ctx.Transport.Output.CompleteAsync();
-
-                        //await confirmation close from peer
-                        ReadResult readResult;
-                        if(readTask.IsCompleted)
+                        try
                         {
-                            readResult = readTask.Result;
+                            await next(ctx);
                         }
-                        else
+                        finally
                         {
-                            readResult = await readTask;
+                            //initialize read, or it might complete before you start
+                            //reading
+                            ValueTask<ReadResult> readTask = ctx.Transport.Input.ReadAsync();
+
+                            //close connection
+                            await ctx.Transport.Output.CompleteAsync();
+
+                            //await confirmation close from peer
+                            ReadResult readResult;
+                            if (readTask.IsCompleted)
+                            {
+                                readResult = readTask.Result;
+                            }
+                            else
+                            {
+                                readResult = await readTask;
+                            }
+
+                            Assert.True(readResult.IsCompleted);
+                            Assert.True(readResult.Buffer.IsEmpty);
                         }
-                        
-                        Assert.True(readResult.IsCompleted);
-                        Assert.True(readResult.Buffer.IsEmpty);
                     }
                     finally
                     {
                         await ctx.Transport.Input.CompleteAsync();
                     }
-
-                    await next(ctx);
                 }
             );
 
@@ -165,10 +170,17 @@ namespace NippyWard.Networking.Tests
                 {
                     try
                     {
-                        //await connection close
-                        ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                        Assert.True(readResult.IsCompleted);
-                        Assert.True(readResult.Buffer.IsEmpty);
+                        try
+                        {
+                            await next(ctx);
+                        }
+                        finally
+                        {
+                            //await connection close
+                            ReadResult readResult = await ctx.Transport.Input.ReadAsync();
+                            Assert.True(readResult.IsCompleted);
+                            Assert.True(readResult.Buffer.IsEmpty);
+                        }
                     }
                     finally
                     {
@@ -176,8 +188,6 @@ namespace NippyWard.Networking.Tests
                         await ctx.Transport.Output.CompleteAsync();
                         await ctx.Transport.Input.CompleteAsync();
                     }
-
-                    await next(ctx);
                 }
             );
     }

@@ -64,7 +64,17 @@ namespace NippyWard.Networking.Tls
 
                     context.Transport = pipe;
 
-                    await _next(context);
+                    try
+                    {
+                        await this._next(context);
+
+                        await pipe.ShutdownAsync();
+                    }
+                    finally
+                    {
+                        context.Features.Set<ITlsConnectionFeature>(null);
+                        context.Features.Set<ITlsHandshakeFeature>(null);
+                    }
                 }
             }
             finally

@@ -22,16 +22,23 @@ namespace NippyWard.Networking.Tls
         string? Cipher { get; }
 
         /// <summary>
-        /// Renegotiate the current TLS connection
-        /// Once a renegotiation is fired, it can not be canceled
+        /// Initialize a renegotiation while you're reading
         /// </summary>
-        /// <returns>True when successfull or throws an <see cref="NippyWard.OpenSSL.Error.OpenSslException"/></returns>
-        ValueTask<bool> RenegotiateAsync();
+        Task InitializeRenegotiateAsync();
+
+        /// <summary>
+        /// Renegotiate the current TLS connection
+        /// </summary>
+        Task RenegotiateAsync();
+
+        /// <summary>
+        /// Initialize a shutdown while you're reading
+        /// </summary>
+        Task InitializeShutdownAsync();
 
         /// <summary>
         /// Shutdown the current TLS connection
         /// </summary>
-        /// <returns>True when successfull or throws an <see cref="NippyWard.OpenSSL.Error.OpenSslException"/></returns>
-        ValueTask<bool> ShutdownAsync();
+        Task ShutdownAsync();
     }
 }

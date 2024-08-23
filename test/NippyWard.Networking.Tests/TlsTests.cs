@@ -48,16 +48,52 @@ namespace NippyWard.Networking.Tests
         }
 
         protected override ClientBuilder ConfigureClient(ClientBuilder clientBuilder)
-            => clientBuilder.ConfigureConnection
-            (
-                c => c.UseClientTls()
-            );
+            => clientBuilder
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                try
+                                {
+                                    await next(ctx);
+                                }
+                                catch(TlsShutdownException)
+                                { }
+                            }
+                        )
+                )
+                .ConfigureConnection
+                (
+                    c => c.UseClientTls()
+                );
 
         protected override ServerBuilder ConfigureServer(ServerBuilder serverBuilder)
-            => serverBuilder.ConfigureConnection
-            (
-                c => c.UseServerTls(this.ServerCertificate, this.ServerKey)
-            );
+            => serverBuilder
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                try
+                                {
+                                    await next(ctx);
+                                }
+                                catch (TlsShutdownException)
+                                { }
+                            }
+                        )
+                )
+                .ConfigureConnection
+                (
+                    c => c.UseServerTls(this.ServerCertificate, this.ServerKey)
+                );
 
         [Theory]
         [MemberData(nameof(GetEndPoints))]
@@ -75,6 +111,7 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Server_Init_Renegotiate_server_{serverClientIndex++}_{nameSuffix}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -87,28 +124,10 @@ namespace NippyWard.Networking.Tests
                             {
                                 PipeReader reader = ctx.Transport.Input;
 
-                                //start "reading"
-                                ValueTask<ReadResult> serverReadThread = reader.ReadAsync();
-                                ReadResult readResult;
-
                                 ITlsHandshakeFeature? handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>();
-                                if(handShakeFeature is not null)
-                                {
-                                    await handShakeFeature.RenegotiateAsync();
-                                }
+                                await handShakeFeature!.RenegotiateAsync();
 
-                                //a read should not have bubbled up
-                                Assert.False(serverReadThread.IsCompleted);
-
-                                //renegotiation completed, send close
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //await on close from client
-                                readResult = await serverReadThread;
-                                Assert.True(readResult.IsCompleted);
-
-                                //stop "reading"
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
@@ -120,6 +139,7 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Server_Init_Renegotiate_client_{clientIndex++}_{nameSuffix}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -132,17 +152,12 @@ namespace NippyWard.Networking.Tests
                             {
                                 PipeReader reader = ctx.Transport.Input;
 
-                                //await read
+                                //await read to process renegotiation and shutdown
                                 ReadResult readResult = await reader.ReadAsync();
 
-                                //the only read that completes should be the close from server
                                 Assert.True(readResult.IsCompleted);
 
-                                //confirm close to server
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //stop "reading"
-                                await ctx.Transport.Input.CompleteAsync();
+                                await next(ctx);
                             }
                         )
                 )
@@ -177,6 +192,7 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Duplex_Data_Server_Init_Renegotiate_server_{serverClientIndex++}_{nameSuffix}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -190,6 +206,8 @@ namespace NippyWard.Networking.Tests
                                 ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>()!;
                                 PipeReader reader = ctx.Transport.Input;
 
+                                await handShakeFeature.InitializeRenegotiateAsync();
+
                                 serverReceiver = RandomDataReceiver
                                 (
                                     ctx.ConnectionId,
@@ -197,7 +215,7 @@ namespace NippyWard.Networking.Tests
                                     testSize,
                                     serverReceived,
                                     this._logger,
-                                    true
+                                    false
                                 );
 
                                 serverSender = RandomDataSender
@@ -211,38 +229,9 @@ namespace NippyWard.Networking.Tests
                                     false
                                 );
 
-                                //wait on atleast 10 buffer sizes to start renegotiate
-                                //this should be at most at about 10% of entire test (when 16k buffers)
-                                while(pipeFeature.TotalBytesSent < maxBufferSize * 10)
-                                {
-                                    Thread.Sleep(1);
-                                }
-
-                                //ensure it ignores synchronizationcontext
-                                //because it could return from the write thread (serverSender)
-                                await handShakeFeature.RenegotiateAsync().ConfigureAwait(false);
-
                                 //wait until sender completes
                                 serverBytesSent = await serverSender;
-
-                                //initiate close from server, this should end
-                                //client read thread
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                try
-                                {
-                                    //server receiver will end through client close
-                                    serverBytesReceived = await serverReceiver;
-
-                                    //verify close
-                                    ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                    Assert.True(readResult.IsCompleted);
-                                    Assert.Equal(0, readResult.Buffer.Length);
-                                }
-                                finally
-                                {
-                                    await ctx.Transport.Input.CompleteAsync();
-                                }
+                                serverBytesReceived = await serverReceiver;
                             }
                         )
                 )
@@ -254,6 +243,7 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Duplex_Data_Server_Init_Renegotiate_client_{clientIndex++}_{nameSuffix}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -290,16 +280,6 @@ namespace NippyWard.Networking.Tests
 
                                 clientBytesReceived = clientReceiver.Result;
                                 clientBytesSent = clientSender.Result;
-
-                                //acknowledge close to server
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //verify close
-                                ReadResult readResult = await ctx.Transport.Input.ReadAsync();
-                                Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                await ctx.Transport.Input.CompleteAsync();
                             }
                         )
                 )
@@ -322,6 +302,7 @@ namespace NippyWard.Networking.Tests
         {
             int serverClientIndex = 0;
             int clientIndex = 0;
+            TaskCompletionSource server_authenticated = new TaskCompletionSource();
 
             Task serverTask = new ServerBuilder(this.ServiceProvider)
                 .ConfigureEndpoint
@@ -329,6 +310,7 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Client_Init_Shutdown_server_{serverClientIndex++}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -339,17 +321,13 @@ namespace NippyWard.Networking.Tests
                             async (ConnectionContext ctx) =>
                             {
                                 PipeReader reader = ctx.Transport.Input;
-
                                 ValueTask<ReadResult> readTask = reader.ReadAsync();
 
-                                await Assert.ThrowsAsync<TlsShutdownException>(async () => await readTask);
+                                server_authenticated.SetResult();
 
-                                //wait on close from client
-                                await reader.ReadAsync();
+                                ReadResult readResult = await readTask;
 
-                                //ack close
-                                await ctx.Transport.Output.CompleteAsync();
-                                await reader.CompleteAsync();
+                                Assert.True(readResult.IsCompleted);
 
                                 await next(ctx);
                             }
@@ -363,6 +341,77 @@ namespace NippyWard.Networking.Tests
                     endpoint,
                     () => $"Client_Init_Shutdown_client_{clientIndex++}"
                 )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.UseClientTls(SslProtocol.Tls12)
+                        .Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                await server_authenticated.Task;
+
+                                PipeReader reader = ctx.Transport.Input;
+                                ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>()!;
+
+                                await handShakeFeature.ShutdownAsync();
+
+                                await next(ctx);
+                            }
+                        )
+                )
+                .Build(endpoint);
+
+            await Task.WhenAll(serverTask, clientTask);
+        }
+
+        [Theory]
+        [MemberData(nameof(GetEndPoints))]
+        public async Task Server_Init_Shutdown(EndPoint endpoint)
+        {
+            int serverClientIndex = 0;
+            int clientIndex = 0;
+
+            TaskCompletionSource client_authenticated = new TaskCompletionSource();
+
+            Task serverTask = new ServerBuilder(this.ServiceProvider)
+                .ConfigureEndpoint
+                (
+                    endpoint,
+                    () => $"Server_Init_Shutdown_server_{serverClientIndex++}"
+                )
+                .ConfigureConnection((c) => ConfigureCloseInitializer(c))
+                .ConfigureConnection
+                (
+                    (c) =>
+                        c.UseServerTls(this.ServerCertificate, this.ServerKey, SslProtocol.Tls12)
+                        .Use
+                        (
+                            next =>
+                            async (ConnectionContext ctx) =>
+                            {
+                                await client_authenticated.Task;
+
+                                PipeReader reader = ctx.Transport.Input;
+                                ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>()!;
+
+                                await next(ctx);
+
+                                await handShakeFeature.ShutdownAsync();
+                            }
+                        )
+                )
+                .BuildSingleClient();
+
+            Task clientTask = new ClientBuilder(this.ServiceProvider)
+                .ConfigureEndpoint
+                (
+                    endpoint,
+                    () => $"Server_Init_Shutdown_client_{clientIndex++}"
+                )
+                .ConfigureConnection((c) => ConfigureCloseListener(c))
                 .ConfigureConnection
                 (
                     (c) =>
@@ -373,23 +422,13 @@ namespace NippyWard.Networking.Tests
                             async (ConnectionContext ctx) =>
                             {
                                 PipeReader reader = ctx.Transport.Input;
-                                ITlsHandshakeFeature handShakeFeature = ctx.Features.Get<ITlsHandshakeFeature>()!;
-
                                 ValueTask<ReadResult> readTask = reader.ReadAsync();
 
-                                await handShakeFeature.ShutdownAsync();
+                                client_authenticated.SetResult();
 
-                                await Assert.ThrowsAsync<TlsShutdownException>(async () => await readTask);
+                                ReadResult readResult = await readTask;
 
-                                //start socket shutdown
-                                await ctx.Transport.Output.CompleteAsync();
-
-                                //wait ack close from server
-                                ReadResult readResult = await reader.ReadAsync();
                                 Assert.True(readResult.IsCompleted);
-                                Assert.Equal(0, readResult.Buffer.Length);
-
-                                await reader.CompleteAsync();
 
                                 await next(ctx);
                             }

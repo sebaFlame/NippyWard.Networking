@@ -17,6 +17,8 @@ using NippyWard.OpenSSL.X509;
 
 using NippyWard.Networking.Logging;
 using System.Diagnostics.CodeAnalysis;
+using NippyWard.OpenSSL.Error;
+using System.IO;
 
 namespace NippyWard.Networking.Tls
 {
@@ -50,8 +52,6 @@ namespace NippyWard.Networking.Tls
         private readonly TlsBuffer _unencryptedWriteBuffer;
 
         private Task? _writeAwaiter;
-        private TlsPipeValueTaskAwaiter? _renegotiateWaiter;
-        private TlsPipeValueTaskAwaiter? _shutdownWaiter;
 
         private static Task _WriteCompletedTask;
 
@@ -102,12 +102,7 @@ namespace NippyWard.Networking.Tls
         )
         {
             SslState sslState = default;
-            ValueTask<ReadResult> readTask;
-            ValueTask<FlushResult> flushTask;
-            ReadResult readResult;
-            FlushResult flushResult;
-            ReadOnlySequence<byte> buffer;
-            SequencePosition read;
+            bool completed;
 
             logger?.TraceLog(connectionId, $"authenticating TLS as {(ssl.IsServer ? "server" : "client")}");
 
@@ -115,120 +110,179 @@ namespace NippyWard.Networking.Tls
             {
                 logger?.TraceLog(connectionId, $"authenticating state of {sslState} for {(ssl.IsServer ? "server" : "client")}");
 
-                do
+                (sslState, completed) = await ReadWriteAsync
+                (
+                    ssl,
+                    connectionId,
+                    pipeReader,
+                    decryptedReadBuffer,
+                    pipeWriter,
+                    logger,
+                    sslState,
+                    cancellationToken
+                );
+
+
+                //if pipe was completed (connection EOF)
+                if (completed)
                 {
-                    if (sslState.WantsWrite())
+                    //and handshake was completed
+                    //data might be available to read
+                    //allow TlsPipe to be created
+                    if (ssl.DoHandshake(out sslState))
                     {
-                        //get a buffer from the ssl object
-                        sslState = ssl.WriteSsl
-                        (
-                            ReadOnlySequence<byte>.Empty,
-                            pipeWriter,
-                            out _
-                        );
+                        logger?.TraceLog(connectionId, "completed during authentication with successful handshake");
 
-                        logger?.TraceLog(connectionId, $"authenticating write of {pipeWriter.UnflushedBytes} for {(ssl.IsServer ? "server" : "client")}");
-
-                        if (pipeWriter.UnflushedBytes == 0)
-                        {
-                            break;
-                        }
-
-                        //flush to the other side
-                        flushTask = pipeWriter.FlushAsync(cancellationToken);
-
-                        if (flushTask.IsCompletedSuccessfully)
-                        {
-                            flushResult = flushTask.Result;
-                        }
-                        else
-                        {
-                            flushResult = await flushTask;
-                        }
-
-                        if (flushResult.IsCanceled)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                        }
-                        else if (flushResult.IsCompleted)
-                        {
-                            //if handshake not completed, throw exception
-                            if (!ssl.DoHandshake(out sslState))
-                            {
-                                ThrowPipeCompleted();
-                            }
-
-                            logger?.TraceLog(connectionId, $"pipe writer completed during handshake with state {sslState}");
-
-                            //user data might have been received, leave further processing to consumer
-                            break;
-                        }
-
-                        cancellationToken.ThrowIfCancellationRequested();
+                        break;
                     }
-
-                    if (sslState.WantsRead())
+                    //handshake not completed, no data should be available
+                    //throw an exception
+                    else
                     {
-                        //completed, run DoHandshake
-                        if (sslState.HandshakeCompleted())
-                        {
-                            break;
-                        }
+                        logger?.TraceLog(connectionId, "completed during authentication without successful handshake");
 
-                        //get a buffer from the other side
-                        readTask = pipeReader.ReadAsync(cancellationToken);
-
-                        if (readTask.IsCompletedSuccessfully)
-                        {
-                            readResult = readTask.Result;
-                        }
-                        else
-                        {
-                            readResult = await readTask;
-                        }
-
-                        buffer = readResult.Buffer;
-                        read = buffer.Start;
-
-                        try
-                        {
-                            logger?.TraceLog(connectionId, $"authenticating read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")}");
-
-                            sslState = ssl.ReadSsl
-                            (
-                                buffer,
-                                decryptedReadBuffer,
-                                out read
-                            );
-                        }
-                        finally
-                        {
-                            pipeReader.AdvanceTo(read);
-                        }
-
-                        if (readResult.IsCanceled)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                        }
-                        else if (readResult.IsCompleted)
-                        {
-                            //if handshake not completed, throw exception
-                            if (!ssl.DoHandshake(out sslState))
-                            {
-                                ThrowPipeCompleted();
-                            }
-
-                            logger?.TraceLog(connectionId, $"pipe reader completed during handshake with state {sslState}");
-
-                            //user data might have been received, leave further processing to consumer
-                            break;
-                        }
+                        ThrowPipeCompleted();
                     }
-                } while (sslState.WantsRead()
-                    || sslState.WantsWrite());
+                }
+
+                if(sslState.IsShutdown())
+                {
+                    logger?.TraceLog(connectionId, "shutdown during authentication");
+
+                    //finish the shutdown to prevent a deadlock (both server and client waiting on a read)
+                    await ShutdownAsyncCore
+                    (
+                        ssl,
+                        connectionId,
+                        pipeReader,
+                        decryptedReadBuffer,
+                        pipeWriter,
+                        logger,
+                        cancellationToken
+                    );
+
+                    //still allow to create a TlsPipe after shutdown succeeds
+                    //data might be available to read
+                    break;
+                }
             }
 
             logger?.TraceLog(connectionId, "authenticated TLS");
+        }
+        #endregion
+
+        #region readwrite
+        private static async Task<(SslState, bool)> ReadWriteAsync
+        (
+            Ssl ssl,
+            string connectionId,
+            PipeReader pipeReader,
+            TlsBuffer decryptedReadBuffer,
+            PipeWriter pipeWriter,
+            ILogger? logger,
+            SslState sslState,
+            CancellationToken cancellationToken,
+            [CallerMemberName] string? method = null
+        )
+        {
+            ValueTask<ReadResult> readTask;
+            ValueTask<FlushResult> flushTask;
+            ReadResult readResult;
+            FlushResult flushResult;
+            ReadOnlySequence<byte> buffer;
+            SequencePosition read;
+            bool completed = false;
+
+            if (sslState.WantsWrite())
+            {
+                //get a buffer from the ssl object
+                sslState = ssl.WriteSsl
+                (
+                    ReadOnlySequence<byte>.Empty,
+                    pipeWriter,
+                    out _
+                );
+
+                logger?.TraceLog(connectionId, $"{method}: write of {pipeWriter.UnflushedBytes} for {(ssl.IsServer ? "server" : "client")} with state {sslState}");
+
+                if (pipeWriter.UnflushedBytes == 0)
+                {
+                    return (sslState, completed);
+                }
+
+                //flush to the other side
+                flushTask = pipeWriter.FlushAsync(cancellationToken);
+
+                if (flushTask.IsCompletedSuccessfully)
+                {
+                    flushResult = flushTask.Result;
+                }
+                else
+                {
+                    flushResult = await flushTask;
+                }
+
+                if (flushResult.IsCanceled)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                else if (flushResult.IsCompleted)
+                {
+                    logger?.TraceLog(connectionId, $"pipe writer completed during {method} with state {sslState}");
+
+                    completed = true;
+                }
+            }
+            else if (sslState.WantsRead())
+            {
+                //get a buffer from the other side
+                readTask = pipeReader.ReadAsync(cancellationToken);
+
+                if (readTask.IsCompletedSuccessfully)
+                {
+                    readResult = readTask.Result;
+                }
+                else
+                {
+                    readResult = await readTask;
+                }
+
+                buffer = readResult.Buffer;
+                read = buffer.Start;
+
+                try
+                {
+                    sslState = ssl.ReadSsl
+                    (
+                        buffer,
+                        decryptedReadBuffer,
+                        out read
+                    );
+
+                    logger?.TraceLog(connectionId, $"{method}: read of {buffer.Length} for {(ssl.IsServer ? "server" : "client")} with state {sslState}");
+                }
+                finally
+                {
+                    pipeReader.AdvanceTo(read);
+                }
+
+                if (readResult.IsCanceled)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+                else if (readResult.IsCompleted)
+                {
+                    logger?.TraceLog(connectionId, $"pipe reader completed during {method} with state {sslState}");
+
+                    //user data might have been received, leave further processing to consumer
+                    //eg call TryRead
+                    completed = true;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return (sslState, completed);
         }
         #endregion
 
@@ -266,12 +320,14 @@ namespace NippyWard.Networking.Tls
                 CreateReadResultFromTlsBuffer
                 (
                     this._decryptedReadBuffer,
+                    cancellationToken.IsCancellationRequested,
+                    false,
                     out ReadResult tlsResult
                 );
 
                 return new ValueTask<ReadResult>(tlsResult);
             }
-            
+
             //then try an async read
             ValueTask<ReadResult> readResultTask = this._innerReader.ReadAsync(cancellationToken);
             if (!readResultTask.IsCompletedSuccessfully)
@@ -305,6 +361,8 @@ namespace NippyWard.Networking.Tls
             CreateReadResultFromTlsBuffer
             (
                 this._decryptedReadBuffer,
+                cancellationToken.IsCancellationRequested,
+                false,
                 out ReadResult tlsResult
             );
 
@@ -376,29 +434,6 @@ namespace NippyWard.Networking.Tls
             return new ValueTask<ReadResult>(tlsResult);
         }
 
-        private void ProcessRenegotiate(in SslState sslState)
-        {
-            if (sslState.HandshakeCompleted())
-            {
-                this.TraceLog("handshake completed (authenticate/renegotiate)");
-
-                this._renegotiateWaiter?.SetResult(true);
-                this._renegotiateWaiter = null;
-            }
-        }
-
-        private void ProcessRenegotiate(Exception ex)
-        {
-            this._renegotiateWaiter?.SetException(ex);
-            this._renegotiateWaiter = null;
-        }
-
-        private void ProcessShutdown(Exception ex)
-        {
-            this._shutdownWaiter?.SetException(ex);
-            this._shutdownWaiter = null;
-        }
-
         private SslState ProcessReadResult
         (
             in ReadOnlySequence<byte> buffer,
@@ -417,17 +452,13 @@ namespace NippyWard.Networking.Tls
                     this._decryptedReadBuffer,
                     out readPosition
                 );
-
-                this.TraceLog($"ReadSsl (buffer {buffer.Length})");
-
-                this.ProcessRenegotiate(in sslState);
             }
-            catch(Exception ex)
+            catch (OpenSslException e) when (e.Errors.Any(x => x.Library == 20 && x.Reason == 207)) //protocol is shutdown
             {
-                this.ProcessRenegotiate(ex);
-                this.ProcessShutdown(ex);
-                throw;
+                throw new TlsShutdownException();
             }
+
+            this.TraceLog($"ReadSsl (buffer {buffer.Length})");
 
             return sslState;
         }
@@ -446,11 +477,13 @@ namespace NippyWard.Networking.Tls
         private static void CreateReadResultFromTlsBuffer
         (
             TlsBuffer decryptedReadBuffer,
+            bool isCanceled,
+            bool isCompleted,
             out ReadResult tlsResult
         )
         {
             decryptedReadBuffer.CreateReadOnlySequence(out ReadOnlySequence<byte> result);
-            tlsResult = new ReadResult(result, false, false);
+            tlsResult = new ReadResult(result, isCanceled, isCompleted);
         }
 
         internal bool TryRead(out ReadResult readResult)
@@ -461,7 +494,14 @@ namespace NippyWard.Networking.Tls
                 return false;
             }
 
-            CreateReadResultFromTlsBuffer(this._decryptedReadBuffer, out readResult);
+            CreateReadResultFromTlsBuffer
+            (
+                this._decryptedReadBuffer,
+                false,
+                false,
+                out readResult
+            );
+
             return true;
 
             /* don't do this, can not react to state changes
@@ -789,12 +829,19 @@ namespace NippyWard.Networking.Tls
 
             try
             {
-                sslState = this._ssl.WriteSsl
-                (
-                    buffer,
-                    pipeWriter,
-                    out readPosition
-                );
+                try
+                {
+                    sslState = this._ssl.WriteSsl
+                    (
+                        buffer,
+                        pipeWriter,
+                        out readPosition
+                    );
+                }
+                catch(OpenSslException e) when (e.Errors.Any(x => x.Library == 20 && x.Reason == 207)) //protocol is shutdown
+                {
+                    throw new TlsShutdownException();
+                }
 
                 this.TraceLog($"WriteSsl (buffer {buffer.Length})");
 
@@ -802,20 +849,13 @@ namespace NippyWard.Networking.Tls
 
                 if (sslState.IsShutdown())
                 {
-                    this.TraceLog("shutdown during write requested");
-
-                    try
-                    {
-                        ThrowTlsShutdown();
-                    }
-                    finally
-                    {
-                        this._shutdownWaiter?.SetResult(true);
-                        this._shutdownWaiter = null;
-                    }
+                    this.TraceLog("shutdown during write discovered");
                 }
 
-                this.ProcessRenegotiate(in sslState);
+                if(sslState.WantsRead())
+                {
+                    this.TraceLog("read during write discovered");
+                }
 
                 //nothing has been written to PipeWriter (IBufferWriter)
                 if (pipeWriter.UnflushedBytes == 0)
@@ -865,17 +905,6 @@ namespace NippyWard.Networking.Tls
                 this.TraceLog("initiated flush");
                 flushTask = pipeWriter.FlushAsync(cancellationToken);
             }
-            catch (Exception ex)
-            {
-                //ensure current renegotiation finishes
-                this.ProcessRenegotiate(ex);
-
-                //ensure shutdown finishes
-                this.ProcessShutdown(ex);
-
-                //rethrow
-                throw;
-            }
             finally
             {
                 //only advance reader when a read has occured
@@ -921,12 +950,6 @@ namespace NippyWard.Networking.Tls
                     return flushTask;
                 }
             }
-            catch (Exception ex)
-            {
-                this.ProcessRenegotiate(ex);
-                this.ProcessShutdown(ex);
-                throw;
-            }
             finally
             {
                 _ = Interlocked.Exchange(ref this._writeAwaiter, null);
@@ -954,12 +977,6 @@ namespace NippyWard.Networking.Tls
                 {
                     return flushResult;
                 }
-            }
-            catch (Exception ex)
-            {
-                this.ProcessRenegotiate(ex);
-                this.ProcessShutdown(ex);
-                throw;
             }
             finally
             {
@@ -1000,46 +1017,59 @@ namespace NippyWard.Networking.Tls
         }
 
         /// <summary>
-        /// Initialize and complete a SSL/TLS renegotatiate.
-        /// Ensure you're always reading.
-        /// Not cancellable!
+        /// Initialize and complete an SSL/TLS renegotiation.
+        /// Ensure you're not reading/writing anymore.
+        /// Not cancellable.
         /// </summary>
-        public ValueTask<bool> RenegotiateAsync()
+        public async Task RenegotiateAsync()
         {
-            SslState sslState;
-            this._renegotiateWaiter = new TlsPipeValueTaskAwaiter();
-            ValueTask<bool> renegotiateTask = new ValueTask<bool>(this._renegotiateWaiter, 0);
-
             this.TraceLog("renegotiating");
 
-            try
+            while (!this._ssl.DoRenegotiate(out SslState sslState))
             {
-                sslState = this._ssl.DoRenegotiate();
-            }
-            catch (Exception)
-            {
-                this._renegotiateWaiter = null;
-                throw;
-            }
+                this._logger?.TraceLog(this._connectionId, $"renegotiating state of {sslState} for {(this._ssl.IsServer ? "server" : "client")}");
 
-            //can happen during TLS1.3 "renegotiate"
-            this.ProcessRenegotiate(sslState);
-
-            if (sslState.WantsWrite())
-            {
-                ValueTask<bool> ReturnRenegotiateTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
-                    => renegotiateTask;
-
-                this.TraceLog("write during renegotiate requested");
-                return this.WriteDuringOperation(ReturnRenegotiateTask, true, CancellationToken.None);
+                await ReadWriteAsync
+                (
+                    this._ssl,
+                    this._connectionId,
+                    this._innerReader,
+                    this._decryptedReadBuffer,
+                    this._innerWriter,
+                    this._logger,
+                    sslState,
+                    CancellationToken.None
+                );
             }
 
-            if (sslState.WantsRead())
+            this.TraceLog("renegotiate completed");
+        }
+
+        /// <summary>
+        /// Initialize an SSL/TLS renegotiation.
+        /// This method expects a read thread to be active to be able to proceed with the renegotiation.
+        /// Not cancellable.
+        /// </summary>
+        public Task InitializeRenegotiateAsync()
+        {
+            this.TraceLog("initializing renegotiate");
+
+            if(this._ssl.DoRenegotiate(out SslState sslState))
             {
-                this.TraceLog("read during renegotiate requested");
+                return Task.FromException(new InvalidOperationException("Renegotiation already completed"));
             }
 
-            return renegotiateTask;
+            return ReadWriteAsync
+            (
+                this._ssl,
+                this._connectionId,
+                this._innerReader,
+                this._decryptedReadBuffer,
+                this._innerWriter,
+                this._logger,
+                sslState,
+                CancellationToken.None
+            );
         }
         #endregion
 
@@ -1052,85 +1082,135 @@ namespace NippyWard.Networking.Tls
         )
         {
             SslState sslState;
+            ReadResult readResult;
 
-            while(!this.ShutdownInternal(out sslState))
+            while(!ShutdownInternal(this._ssl, this._connectionId, this._logger, out sslState))
             {
                 if (sslState.WantsWrite())
                 {
-                    //keep these scoped
-                    TaskCompletionSource<int> tcs = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
-                    ValueTask<ReadResult> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
+                    static ValueTask<bool> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
                     {
-                        tcs.SetResult(0);
-                        return default;
+                        return new ValueTask<bool>(flushResult.IsCompleted);
                     }
 
-                    ValueTask<ReadResult> readTask = this.WriteDuringOperation<ReadResult>
+                    await this.WriteDuringOperation<bool>
                     (
                         ReturnShutdownTask,
                         bufferRead,
                         cancellationToken
                     );
-
-                    await tcs.Task;
                 }
-                //should never happen
-                else
+                else if(sslState.WantsRead())
                 {
-                    throw new InvalidOperationException($"{sslState} requested during shutdown");
+                    //this should only recurse 1 level deep
+                    return await this.ReadAsync(cancellationToken); 
                 }
             }
 
-            //TODO: disable TLS
-            return default;
-            //throw new NotSupportedException($"{nameof(ShutdownDuringReadAsync)} should never return");
+            CreateReadResultFromTlsBuffer
+            (
+                this._decryptedReadBuffer,
+                cancellationToken.IsCancellationRequested,
+                true,
+                out readResult
+            );
+
+            return readResult;
         }
 
-        //throws an excpetion on success!
-        private bool ShutdownInternal(out SslState sslState)
+        private static bool ShutdownInternal
+        (
+            Ssl ssl,
+            string connectionId,
+            ILogger? logger,
+            out SslState sslState
+        )
         {
-            bool succes = this._ssl.DoShutdown(out sslState);
+            bool succes = ssl.DoShutdown(out sslState);
 
             if(succes)
             {
-                this.TraceLog("shutdown during shutdown completed");
-
-                try
-                {
-                    ThrowTlsShutdown();
-                }
-                finally
-                {
-                    this._shutdownWaiter?.SetResult(true);
-                    this._shutdownWaiter = null;
-                }
+                TraceLog(logger, connectionId, "shutdown completed");
             }
 
             return succes;
         }
 
-        public ValueTask<bool> ShutdownAsync()
+        private static async Task ShutdownAsyncCore
+        (
+            Ssl ssl,
+            string connectionId,
+            PipeReader pipeReader,
+            TlsBuffer decryptedReadBuffer,
+            PipeWriter pipeWriter,
+            ILogger? logger,
+            CancellationToken cancellationToken
+        )
         {
-            this._shutdownWaiter = new TlsPipeValueTaskAwaiter();
-            ValueTask<bool> shutdownTask = new ValueTask<bool>(this._shutdownWaiter, 0);
+            TraceLog(logger, connectionId, "shutting down");
 
-            this.ShutdownInternal(out SslState sslState);
-
-            if (sslState.WantsWrite())
+            while (!ShutdownInternal(ssl, connectionId, logger, out SslState sslState))
             {
-                ValueTask<bool> ReturnShutdownTask(FlushResult flushResult, bool bufferRead, CancellationToken cancellationToken)
-                    => shutdownTask;
+                TraceLog(logger, connectionId, $"shutting down state of {sslState} for {(ssl.IsServer ? "server" : "client")}");
 
-                this.TraceLog("write during shutdown requested");
-                return this.WriteDuringOperation(ReturnShutdownTask, true, CancellationToken.None);
+                await ReadWriteAsync
+                (
+                    ssl,
+                    connectionId,
+                    pipeReader,
+                    decryptedReadBuffer,
+                    pipeWriter,
+                    logger,
+                    sslState,
+                    cancellationToken
+                );
+            }
+        }
+
+        /// <summary>
+        /// Shut down the SSL/TLS connection.
+        /// Ensure you're not reading/writing anymore.
+        /// Not cancellable.
+        /// </summary>
+        public Task ShutdownAsync()
+        {
+            return ShutdownAsyncCore
+            (
+                this._ssl,
+                this._connectionId,
+                this._innerReader,
+                this._decryptedReadBuffer,
+                this._innerWriter,
+                this._logger,
+                CancellationToken.None
+            );
+        }
+
+        /// <summary>
+        /// Initializes an SSL/TLS shutdown.
+        /// This method expects a read thread to be active to proceed with the shutdown.
+        /// Not cancellable.
+        /// </summary>
+        public Task InitializeShutdownAsync()
+        {
+            this.TraceLog("initializing shutdown");
+
+            if(ShutdownInternal(this._ssl, this._connectionId, this._logger, out SslState sslState))
+            {
+                return Task.FromException(new InvalidOperationException("Shutdown already completed"));
             }
 
-            if (sslState.WantsRead())
-            {
-                this.TraceLog("read during shutdown requested");
-            }
-
-            return shutdownTask;
+            return ReadWriteAsync
+            (
+                this._ssl,
+                this._connectionId,
+                this._innerReader,
+                this._decryptedReadBuffer,
+                this._innerWriter,
+                this._logger,
+                sslState,
+                CancellationToken.None
+            );
         }
         #endregion
 
@@ -1138,15 +1218,33 @@ namespace NippyWard.Networking.Tls
         private static void ThrowPipeCompleted()
             => throw new InvalidOperationException("Pipe has been completed");
 
-        [DoesNotReturn]
-        private static void ThrowTlsShutdown()
-            => throw new TlsShutdownException();
-
         [Conditional("TRACELOG")]
-        private void TraceLog(string message, [CallerFilePath] string? file = null, [CallerMemberName] string? caller = null, [CallerLineNumber] int lineNumber = 0)
+        private static void TraceLog
+        (
+            ILogger? logger,
+            string connectionId,
+            string message,
+            [CallerFilePath] string? file = null,
+            [CallerMemberName] string? caller = null,
+            [CallerLineNumber] int lineNumber = 0
+        )
         {
 #if TRACELOG
-            this._logger?.TraceLog(this._connectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+            logger?.TraceLog(connectionId, message, $"{System.IO.Path.GetFileName(file)}:{caller}#{lineNumber}");
+#endif
+        }
+
+        [Conditional("TRACELOG")]
+        private void TraceLog
+        (
+            string message,
+            [CallerFilePath] string? file = null,
+            [CallerMemberName] string? caller = null,
+            [CallerLineNumber] int lineNumber = 0
+        )
+        {
+#if TRACELOG
+            TraceLog(this._logger, this._connectionId, message, file, caller, lineNumber);
 #endif
         }
 
